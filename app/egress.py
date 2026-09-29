@@ -28,11 +28,16 @@ def observed_egress_ips() -> list[str]:
     return sorted(OBSERVED_IPS)
 
 
+async def sample_egress_ip() -> str | None:
+    ip = await fetch_egress_ip()
+    if ip:
+        OBSERVED_IPS.add(ip)
+        logger.info("Egress IP: %s", ip)
+    return ip
+
+
 async def log_egress_ip_loop() -> None:
     """Track the public IP the host uses, needed to register the CoC API key."""
     while True:
-        ip = await fetch_egress_ip()
-        if ip:
-            OBSERVED_IPS.add(ip)
-            logger.info("Egress IP: %s", ip)
+        await sample_egress_ip()
         await asyncio.sleep(EGRESS_LOG_INTERVAL_SECONDS)

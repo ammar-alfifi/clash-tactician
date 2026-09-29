@@ -65,3 +65,16 @@ async def test_diag_reports_database_counts(tmp_path, monkeypatch) -> None:
         assert payload["counts"]["linked_players"] == 0
     finally:
         await client.close()
+
+
+async def test_diag_coc_check_without_token(monkeypatch) -> None:
+    monkeypatch.setenv("DIAG_TOKEN", "secret-token")
+    monkeypatch.delenv("COC_API_TOKEN", raising=False)
+    client = TestClient(TestServer(create_health_app()))
+    await client.start_server()
+    try:
+        response = await client.get("/diag?token=secret-token&coc=1")
+        payload = await response.json()
+        assert payload["coc"] == {"ok": False, "reason": "missing_token"}
+    finally:
+        await client.close()

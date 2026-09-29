@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*.sqlite3
+*.db
+data/
+tests/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.git/
+.gitignore
+Dockerfile
+docker-compose.yml
+DEPLOY_AR.md

@@ -1,0 +1,15 @@
+services:
+  clash-tactician:
+    build: .
+    image: clash-tactician
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_PATH: /data/bot.sqlite3
+    volumes:
+      - clash-data:/data
+    ports:
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  clash-data:

@@ -6,7 +6,8 @@ import aiohttp
 logger = logging.getLogger(__name__)
 
 EGRESS_CHECK_URL = "https://api.ipify.org"
-EGRESS_LOG_INTERVAL_SECONDS = 6 * 60 * 60
+EGRESS_LOG_INTERVAL_SECONDS = 5 * 60
+OBSERVED_IPS: set[str] = set()
 
 
 async def fetch_egress_ip() -> str | None:
@@ -23,10 +24,15 @@ async def fetch_egress_ip() -> str | None:
         return None
 
 
+def observed_egress_ips() -> list[str]:
+    return sorted(OBSERVED_IPS)
+
+
 async def log_egress_ip_loop() -> None:
-    """Log the public IP the host uses, needed to register the CoC API key."""
+    """Track the public IP the host uses, needed to register the CoC API key."""
     while True:
         ip = await fetch_egress_ip()
         if ip:
+            OBSERVED_IPS.add(ip)
             logger.info("Egress IP: %s", ip)
         await asyncio.sleep(EGRESS_LOG_INTERVAL_SECONDS)

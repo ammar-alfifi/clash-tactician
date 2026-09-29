@@ -1,0 +1,23 @@
+name: deploy
+
+# Render cannot auto-deploy a public repository URL without the GitHub App
+# connection, so every push to main triggers a deploy through the Render API.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  trigger-render-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger Render deploy
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        run: |
+          curl -fsS -X POST \
+            "https://api.render.com/v1/services/srv-dau16g893c1s73cbddl0/deploys" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache": "do_not_clear"}'

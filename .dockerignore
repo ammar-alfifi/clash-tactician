@@ -11,6 +11,5 @@ tests/
 *.egg-info/
 .git/
 .gitignore
-Dockerfile
 docker-compose.yml
 DEPLOY_AR.md

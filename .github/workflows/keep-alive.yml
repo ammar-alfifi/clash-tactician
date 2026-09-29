@@ -1,0 +1,39 @@
+name: keep-alive
+
+# Safety-net pinger for the Render free service (the primary pinger is a
+# Cloudflare Worker cron trigger). Short jobs only, so runner usage stays tiny.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: keep-alive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Keep the service active
+        run: |
+          curl -fsS -m 90 "https://clash-tactician.onrender.com/health" -o /dev/null || true
+
+      - name: Keep scheduled workflows enabled
+        if: github.event_name == 'schedule'
+        uses: actions/checkout@v4
+      - name: Refresh repository activity monthly
+        if: github.event_name == 'schedule'
+        run: |
+          if [ "$(date -u +%d%H)" = "0100" ]; then
+            date -u > .github/keepalive.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .github/keepalive.txt
+            git diff --cached --quiet || git commit -m "chore: keepalive"
+            git push
+          fi

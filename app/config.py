@@ -78,9 +78,10 @@ class Settings:
     openrouter_fallback_models: tuple[str, ...] = ()
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     nvidia_api_key: str | None = None
-    nvidia_model: str = "meta/llama-3.2-90b-vision-instruct"
+    nvidia_model: str = "meta/llama-3.2-11b-vision-instruct"
     nvidia_fallback_models: tuple[str, ...] = ()
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+    nvidia_timeout_seconds: int = 180
 
     # Storage
     database_path: Path = PROJECT_ROOT / "data/bot.sqlite3"
@@ -133,13 +134,13 @@ class Settings:
         )
 
         nvidia_model = (
-            os.getenv("NVIDIA_MODEL", "").strip() or "meta/llama-3.2-90b-vision-instruct"
+            os.getenv("NVIDIA_MODEL", "").strip() or "meta/llama-3.2-11b-vision-instruct"
         )
         nvidia_fallbacks = tuple(
             candidate
             for candidate in _model_list(
                 os.getenv("NVIDIA_FALLBACK_MODELS"),
-                "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning,meta/llama-3.2-11b-vision-instruct",
+                "meta/muse-glimmer-30b,nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
             )
             if candidate != nvidia_model
         )
@@ -175,6 +176,7 @@ class Settings:
                 .rstrip("/")
                 or "https://integrate.api.nvidia.com/v1"
             ),
+            nvidia_timeout_seconds=max(30, _as_int(os.getenv("NVIDIA_TIMEOUT_SECONDS"), 180)),
             database_path=database_path,
             default_language=os.getenv("DEFAULT_LANGUAGE", "ar").strip() or "ar",
             war_reminder_interval_minutes=max(

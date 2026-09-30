@@ -315,7 +315,7 @@ def default_model(provider: str) -> str:
         "openrouter": "google/gemma-4-31b-it:free",
         "openai": "gpt-4.1-mini",
         "gemini": "gemini-2.5-flash",
-        "nvidia": "meta/llama-3.2-90b-vision-instruct",
+        "nvidia": "meta/llama-3.2-11b-vision-instruct",
     }.get(provider, "")
 
 

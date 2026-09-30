@@ -38,7 +38,9 @@ async def _ask(event: Message | CallbackQuery, deps: Deps, question: str) -> Non
             user_text=question,
             temperature=0.6,
             max_tokens=1200,
-            timeout=deps.settings.ai_timeout_seconds,
+            timeout=max(
+                deps.settings.ai_timeout_seconds, deps.settings.nvidia_timeout_seconds
+            ),
         )
     except AiError as exc:
         await reply(event, f"⚠️ {exc.reason}")

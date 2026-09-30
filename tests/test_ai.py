@@ -99,15 +99,15 @@ def test_nvidia_shared_preferred_over_openrouter():
     settings = Settings(
         bot_token="t",
         nvidia_api_key="nv",
-        nvidia_model="meta/llama-3.2-90b-vision-instruct",
-        nvidia_fallback_models=("meta/llama-3.2-11b-vision-instruct",),
+        nvidia_model="meta/llama-3.2-11b-vision-instruct",
+        nvidia_fallback_models=("meta/llama-3.2-90b-vision-instruct",),
         openrouter_api_key="or",
     )
     configs = build_shared_configs(settings)
     assert configs[0].provider == "nvidia"
     assert [c.model for c in configs] == [
-        "meta/llama-3.2-90b-vision-instruct",
         "meta/llama-3.2-11b-vision-instruct",
+        "meta/llama-3.2-90b-vision-instruct",
     ]
     assert configs[0].supports_vision
 

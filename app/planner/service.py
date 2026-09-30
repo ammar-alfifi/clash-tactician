@@ -67,7 +67,7 @@ class PlannerService:
                     temperature=0.35,
                     max_tokens=2600,
                     json_mode=True,
-                    timeout=self.settings.ai_timeout_seconds,
+                    timeout=self._timeout_for(config),
                 )
                 return parse_plan(raw)
             except AiAuthError:
@@ -83,3 +83,8 @@ class PlannerService:
                 )
                 continue
         raise last_error or AiUnavailable("تعذّر توليد الخطة حاليًا، جرّب مرة أخرى.")
+
+    def _timeout_for(self, config: AiConfig) -> int:
+        if config.provider == "nvidia":
+            return max(self.settings.ai_timeout_seconds, self.settings.nvidia_timeout_seconds)
+        return self.settings.ai_timeout_seconds

@@ -101,15 +101,19 @@ def build_shared_configs(settings: Settings) -> list[AiConfig]:
             for model in vision_models
         )
         if settings.nvidia_text_model:
-            configs.append(
+            text_models = _dedupe(
+                (settings.nvidia_text_model, *settings.nvidia_text_fallback_models)
+            )
+            configs.extend(
                 AiConfig(
                     provider="nvidia",
-                    model=settings.nvidia_text_model,
+                    model=model,
                     api_key=settings.nvidia_api_key,
                     base_url=settings.nvidia_base_url,
                     label="NVIDIA NIM (تخطيط)",
                     vision=False,
                 )
+                for model in text_models
             )
 
     if settings.openrouter_api_key:

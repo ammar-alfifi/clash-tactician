@@ -83,6 +83,7 @@ class Settings:
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_timeout_seconds: int = 180
     nvidia_text_model: str = "nvidia/nemotron-3-super-120b-a12b"
+    nvidia_text_fallback_models: tuple[str, ...] = ()
 
     # Storage
     database_path: Path = PROJECT_ROOT / "data/bot.sqlite3"
@@ -140,6 +141,18 @@ class Settings:
         nvidia_model = (
             os.getenv("NVIDIA_MODEL", "").strip() or "meta/llama-3.2-11b-vision-instruct"
         )
+        nvidia_text_model = (
+            os.getenv("NVIDIA_TEXT_MODEL", "").strip()
+            or "nvidia/nemotron-3-super-120b-a12b"
+        )
+        nvidia_text_fallbacks = tuple(
+            candidate
+            for candidate in _model_list(
+                os.getenv("NVIDIA_TEXT_FALLBACK_MODELS"),
+                "nvidia/nemotron-3-ultra-550b-a55b",
+            )
+            if candidate != nvidia_text_model
+        )
         nvidia_fallbacks = tuple(
             candidate
             for candidate in _model_list(
@@ -181,10 +194,8 @@ class Settings:
                 or "https://integrate.api.nvidia.com/v1"
             ),
             nvidia_timeout_seconds=max(30, _as_int(os.getenv("NVIDIA_TIMEOUT_SECONDS"), 180)),
-            nvidia_text_model=(
-                os.getenv("NVIDIA_TEXT_MODEL", "").strip()
-                or "nvidia/nemotron-3-super-120b-a12b"
-            ),
+            nvidia_text_model=nvidia_text_model,
+            nvidia_text_fallback_models=nvidia_text_fallbacks[:2],
             database_path=database_path,
             default_language=os.getenv("DEFAULT_LANGUAGE", "ar").strip() or "ar",
             war_reminder_interval_minutes=max(

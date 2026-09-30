@@ -126,6 +126,9 @@ def build_shared_configs(settings: Settings) -> list[AiConfig]:
                 base_url=settings.openrouter_base_url,
                 label="OpenRouter (احتياطي)",
                 header_extra=_openrouter_headers("openrouter"),
+                # OpenRouter free vision is heavily rate-limited; only use it
+                # for text if a model name clearly lacks vision support.
+                vision=False,
             )
             for model in models
         )

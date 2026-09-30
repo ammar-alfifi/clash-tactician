@@ -250,13 +250,15 @@ async def _run_plan(
         await reply(event, cards.plan_text(plan))
 
 
-async def _progress_notifier(message: Message, after_seconds: float = 25) -> None:
+async def _progress_notifier(message: Message) -> None:
     """Reassure the user when generation takes longer than expected."""
-    await asyncio.sleep(after_seconds)
-    try:
-        await message.edit_text(texts.PLAN_SLOW)
-    except Exception:  # noqa: BLE001 - best effort
-        logger.debug("Could not update progress message", exc_info=True)
+    schedule = [(25, texts.PLAN_SLOW), (45, texts.PLAN_STILL), (40, texts.PLAN_STILL)]
+    for delay, text in schedule:
+        await asyncio.sleep(delay)
+        try:
+            await message.edit_text(text)
+        except Exception:  # noqa: BLE001 - best effort
+            logger.debug("Could not update progress message", exc_info=True)
 
 
 async def _deliver_plan(

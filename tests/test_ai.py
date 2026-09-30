@@ -111,7 +111,10 @@ def test_shared_configs_combine_providers():
     assert "openrouter" in providers
     vision = [c for c in configs if c.supports_vision]
     text_only = [c for c in configs if not c.supports_vision]
-    assert vision and text_only
+    # Vision comes only from NVIDIA; OpenRouter is a text fallback (rate-limited).
+    assert vision
+    assert all(c.provider == "nvidia" for c in vision)
+    assert text_only
 
 
 def test_openrouter_shared_used_as_fallback():

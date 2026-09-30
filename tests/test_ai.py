@@ -102,14 +102,16 @@ def test_shared_configs_combine_providers():
         openrouter_model="or-model",
         nvidia_api_key="nv",
         nvidia_model="meta/llama-3.2-11b-vision-instruct",
-        nvidia_fallback_models=("meta/muse-glimmer-30b",),
+        nvidia_text_model="nvidia/nemotron-3-super-120b-a12b",
     )
     configs = build_shared_configs(settings)
     providers = [c.provider for c in configs]
-    # OpenRouter comes first (reliable JSON), NVIDIA is included for redundancy.
     assert providers[0] == "openrouter"
     assert "nvidia" in providers
-    assert all(c.supports_vision for c in configs)
+    # Vision models are flagged; the text planner model is explicitly not vision.
+    vision = [c for c in configs if c.supports_vision]
+    text_only = [c for c in configs if not c.supports_vision]
+    assert vision and text_only
 
 
 def test_openrouter_shared_used_as_fallback():

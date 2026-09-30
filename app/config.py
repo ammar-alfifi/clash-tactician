@@ -82,6 +82,7 @@ class Settings:
     nvidia_fallback_models: tuple[str, ...] = ()
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_timeout_seconds: int = 180
+    nvidia_text_model: str = "nvidia/nemotron-3-super-120b-a12b"
 
     # Storage
     database_path: Path = PROJECT_ROOT / "data/bot.sqlite3"
@@ -180,6 +181,10 @@ class Settings:
                 or "https://integrate.api.nvidia.com/v1"
             ),
             nvidia_timeout_seconds=max(30, _as_int(os.getenv("NVIDIA_TIMEOUT_SECONDS"), 180)),
+            nvidia_text_model=(
+                os.getenv("NVIDIA_TEXT_MODEL", "").strip()
+                or "nvidia/nemotron-3-super-120b-a12b"
+            ),
             database_path=database_path,
             default_language=os.getenv("DEFAULT_LANGUAGE", "ar").strip() or "ar",
             war_reminder_interval_minutes=max(

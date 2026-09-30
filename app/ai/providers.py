@@ -31,6 +31,29 @@ KNOWN_BASE_URLS = {
     "nvidia": "https://integrate.api.nvidia.com/v1",
 }
 
+# Verified (live APIs, 2026) vision-capable keywords by provider. Many NVIDIA
+# models advertised as multimodal actually reject images (HTTP 400), so the
+# planner must be able to tell which configs can read an image.
+_VISION_HINTS = (
+    "vision",
+    "omni",
+    "glimmer",
+    "gemma",
+    "gemini",
+    "gpt-4",
+    "gpt-4o",
+    "gpt-5",
+    "claude",
+    "qwen",
+    "llava",
+    "pixtral",
+    "mistral-small",
+    "phi-3-vision",
+    "inkling",
+    "sonoma",
+    "horizon",
+)
+
 
 @dataclass(frozen=True)
 class AiConfig:
@@ -40,6 +63,7 @@ class AiConfig:
     base_url: str
     label: str | None = None
     header_extra: dict[str, str] = field(default_factory=dict)
+    vision: bool | None = None
 
     @property
     def provider_label(self) -> str:
@@ -47,7 +71,15 @@ class AiConfig:
 
     @property
     def supports_vision(self) -> bool:
-        return self.provider in OPENAI_COMPATIBLE or self.provider == "gemini"
+        if self.vision is not None:
+            return self.vision
+        if self.provider not in OPENAI_COMPATIBLE and self.provider != "gemini":
+            return False
+        lowered = self.model.lower()
+        if self.provider == "nvidia":
+            # NVIDIA has many text-only models; require a known vision hint.
+            return any(hint in lowered for hint in _VISION_HINTS)
+        return True
 
 
 def _mime_from_bytes(data: bytes) -> str:

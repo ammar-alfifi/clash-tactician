@@ -110,6 +110,18 @@ def build_shared_configs(settings: Settings) -> list[AiConfig]:
             )
             for model in models
         )
+        # Strong text-only model for the planning stage (no image needed).
+        if settings.nvidia_text_model:
+            configs.append(
+                AiConfig(
+                    provider="nvidia",
+                    model=settings.nvidia_text_model,
+                    api_key=settings.nvidia_api_key,
+                    base_url=settings.nvidia_base_url,
+                    label="NVIDIA NIM (تخطيط)",
+                    vision=False,
+                )
+            )
     return configs
 
 

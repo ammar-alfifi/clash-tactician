@@ -12,7 +12,7 @@ from app.coc.knowledge import (
     targeting_rules_text,
 )
 from app.core.errors import PlanError
-from app.planner.schema import GRID_SIZE, cell_to_point, parse_plan
+from app.planner.schema import cell_to_point, parse_plan
 from app.planner.validator import detected_summary, validate_plan
 
 GRID_PLAN = {
@@ -212,5 +212,34 @@ def test_placeholder_detections_dropped():
     assert len(parse_plan(payload).detections) == 1
 
 
-def test_grid_size_constant():
-    assert GRID_SIZE == 4
+def test_vision_prompt_is_english_and_short():
+    from app.planner.prompts import VISION_SYSTEM_PROMPT, build_vision_prompt
+
+    prompt = build_vision_prompt()
+    # English + concise is what small vision models handle reliably.
+    assert "4x4 grid" in prompt
+    assert "JSON" in prompt
+    assert len(prompt) < 1400
+    assert "vision model" in VISION_SYSTEM_PROMPT.lower()
+
+
+def test_plan_from_description_includes_description_and_arabic():
+    from app.planner.prompts import PlannerContext, build_plan_from_description
+
+    context = PlannerContext(town_hall=14, goal_label="ثلاث نجوم")
+    description = '{"detections":[{"building":"Air Defense","cell":"A1"}]}'
+    prompt = build_plan_from_description(context, description)
+    assert "Air Defense" in prompt
+    assert "بالعربية" in prompt
+
+
+def test_vision_config_split():
+    from app.ai.providers import AiConfig
+    from app.planner.service import _text_configs, _vision_configs
+
+    vision = AiConfig("nvidia", "meta/llama-3.2-11b-vision-instruct", "k", "https://x")
+    text = AiConfig("nvidia", "nvidia/nemotron-3-super-120b-a12b", "k", "https://x", vision=False)
+    assert _vision_configs([vision, text]) == [vision]
+    assert _text_configs([vision, text]) == [text]
+    # With only vision models, the planner falls back to using them for planning.
+    assert _text_configs([vision]) == [vision]

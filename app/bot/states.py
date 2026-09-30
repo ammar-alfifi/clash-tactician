@@ -11,6 +11,7 @@ class LinkFlow(StatesGroup):
 
 
 class PlannerFlow(StatesGroup):
+    mode = State()
     goal = State()
     army = State()
     image = State()

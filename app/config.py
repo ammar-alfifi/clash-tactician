@@ -143,7 +143,7 @@ class Settings:
             candidate
             for candidate in _model_list(
                 os.getenv("NVIDIA_FALLBACK_MODELS"),
-                "meta/muse-glimmer-30b,z-ai/glm-5.3-flash",
+                "meta/muse-glimmer-30b",
             )
             if candidate != nvidia_model
         )

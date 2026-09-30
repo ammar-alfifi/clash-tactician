@@ -117,18 +117,21 @@ async def _post_json(
 
 
 def _translate_error(error: _ProviderError, provider_label: str) -> Exception:
+    body = error.body.lower()
     if error.status in (401, 403):
         return AiAuthError(f"مزود {provider_label} رفض المفتاح.")
-    if error.status == 402 or "insufficient" in error.body.lower():
+    if error.status == 402 or "insufficient" in body or "credit" in body:
         return AiAuthError(f"لا يوجد رصيد كافٍ لدى {provider_label}.")
     if error.status == 404:
         return AiUnavailable(f"النموذج أو العنوان المحدد غير متاح لدى {provider_label}.")
-    if error.status == 400 and "model" in error.body.lower():
+    if error.status == 400 and "model" in body:
         return AiUnavailable(f"النموذج المحدد غير متاح لدى {provider_label}.")
-    if "image" in error.body.lower() or "vision" in error.body.lower():
+    if error.status == 400 and ("image" in body or "vision" in body or "multimodal" in body):
         return AiUnsupported(f"النموذج المحدد لدى {provider_label} لا يدعم الصور.")
     if error.status == 429:
         return AiUnavailable(f"{provider_label} يحدّ الطلبات حاليًا، جرّب بعد قليل.")
+    if error.status == 503 or "resourceexhausted" in body or "overloaded" in body:
+        return AiUnavailable(f"{provider_label} مزدحم حاليًا، جرّب بعد قليل.")
     return AiUnavailable(f"خطأ من {provider_label} ({error.status}).")
 
 
@@ -333,6 +336,7 @@ async def chat_race(
 
     tasks = [asyncio.create_task(_one(config)) for config in configs]
     errors: list[Exception] = []
+    auth_errors = 0
     try:
         pending: set[asyncio.Task] = set(tasks)
         while pending:
@@ -342,12 +346,15 @@ async def chat_race(
                     config, text = task.result()
                     logger.info("AI answered via %s/%s", config.provider, config.model)
                     return text
-                except AiAuthError:
-                    for other in pending:
-                        other.cancel()
-                    raise
+                except AiAuthError as exc:
+                    # One provider rejecting the key must not cancel the others.
+                    auth_errors += 1
+                    errors.append(exc)
                 except Exception as exc:  # noqa: BLE001 - collect and continue
                     errors.append(exc)
+        # Everything failed: surface auth only if every failure was auth.
+        if errors and auth_errors == len(errors):
+            raise errors[0]
         raise errors[-1] if errors else AiUnavailable("تعذّر الحصول على رد حاليًا.")
     finally:
         for task in tasks:

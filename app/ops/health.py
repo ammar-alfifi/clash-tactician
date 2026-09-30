@@ -129,6 +129,7 @@ async def _plan_check(context: HealthContext) -> dict[str, object]:
     from app.ai.providers import chat_race
     from app.planner.prompts import SYSTEM_PROMPT, PlannerContext, build_user_prompt
     from app.planner.schema import parse_plan
+    from app.planner.service import _is_usable_plan
     from app.planner.validator import validate_plan
 
     configs = build_shared_configs(context.settings)
@@ -147,6 +148,7 @@ async def _plan_check(context: HealthContext) -> dict[str, object]:
             max_tokens=3000,
             json_mode=True,
             timeout=max(c for c in [context.settings.nvidia_timeout_seconds]),
+            validator=_is_usable_plan,
         )
         plan = parse_plan(raw)
         validation = validate_plan(plan, town_hall=ctx.town_hall, army=ctx.army)
@@ -156,6 +158,9 @@ async def _plan_check(context: HealthContext) -> dict[str, object]:
             "error": type(error).__name__,
             "detail": str(error)[:200],
             "seconds": round(time.monotonic() - started, 1),
+            "configs": [
+                {"provider": c.provider, "model": c.model} for c in configs
+            ],
         }
     return {
         "ok": True,

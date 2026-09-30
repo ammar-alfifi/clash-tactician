@@ -6,7 +6,7 @@ import logging
 
 from app.ai.providers import AiConfig, chat_race
 from app.config import Settings
-from app.core.errors import AiAuthError, AiError, AiUnavailable, PlanError
+from app.core.errors import AiError, AiUnavailable, PlanError
 from app.planner.prompts import (
     SYSTEM_PROMPT,
     PlannerContext,
@@ -114,9 +114,7 @@ class PlannerService:
                     validator=_is_usable_plan,
                 )
                 return parse_plan(raw)
-            except AiAuthError:
-                raise
-            except (AiUnavailable, PlanError) as exc:
+            except (AiError, PlanError) as exc:
                 last_error = exc
                 logger.info("Planner attempt %d failed: %s", index + 1, exc)
                 continue

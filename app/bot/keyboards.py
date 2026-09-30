@@ -103,6 +103,17 @@ def planner_goals() -> InlineKeyboardMarkup:
     )
 
 
+def planner_modes(has_personal_key: bool) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if has_personal_key:
+        rows.append([_btn("⚡ سريعة ودقيقة (مفتاحي)", "plan:mode:fast")])
+    else:
+        rows.append([_btn("🔑 أضف مفتاحًا للوضع السريع", "plan:mode:addkey")])
+    rows.append([_btn("🆓 مجانية (قد تبطؤ)", "plan:mode:free")])
+    rows.append([_btn("✖️ إلغاء", "plan:cancel")])
+    return _rows(rows)
+
+
 def planner_ask_army() -> InlineKeyboardMarkup:
     return _rows(
         [

@@ -33,6 +33,19 @@ def _target_message(event: Message | CallbackQuery) -> Message | None:
     return event
 
 
+async def _select_configs(deps: Deps, telegram_id: int, mode: str):
+    """Pick AI configs based on the user's chosen quality/cost preference."""
+    from app.ai.factory import build_shared_configs, build_user_configs
+
+    if mode == "fast":
+        key = await deps.keys.get(telegram_id)
+        api_key = deps.vault.decrypt(key.encrypted_key) if key else None
+        if key and api_key:
+            return build_user_configs(deps.settings, key, api_key)
+        return []  # caller shows the "add a key" message
+    return build_shared_configs(deps.settings)
+
+
 async def _context(
     deps: Deps, telegram_id: int, goal: str, army: str
 ) -> PlannerContext:
@@ -59,25 +72,40 @@ async def _context(
     )
 
 
-async def start_flow(event: Message | CallbackQuery, state: FSMContext) -> None:
+async def start_flow(event: Message | CallbackQuery, state: FSMContext, deps: Deps) -> None:
     await state.clear()
-    await state.set_state(PlannerFlow.goal)
-    await present(event, texts.PLAN_INTRO, keyboards.planner_goals())
+    await state.set_state(PlannerFlow.mode)
+    key = await deps.keys.get(event.from_user.id)
+    await present(event, texts.PLAN_MODE_INTRO, keyboards.planner_modes(bool(key)))
 
 
 @router.message(Command("plan"))
-async def cmd_plan(message: Message, state: FSMContext) -> None:
-    await start_flow(message, state)
+async def cmd_plan(message: Message, state: FSMContext, deps: Deps) -> None:
+    await start_flow(message, state, deps)
 
 
 @router.callback_query(F.data == "nav:planner")
-async def nav_planner(callback: CallbackQuery, state: FSMContext) -> None:
-    await start_flow(callback, state)
+async def nav_planner(callback: CallbackQuery, state: FSMContext, deps: Deps) -> None:
+    await start_flow(callback, state, deps)
 
 
 @router.callback_query(F.data == "plan:new")
-async def new_plan(callback: CallbackQuery, state: FSMContext) -> None:
-    await start_flow(callback, state)
+async def new_plan(callback: CallbackQuery, state: FSMContext, deps: Deps) -> None:
+    await start_flow(callback, state, deps)
+
+
+@router.callback_query(F.data == "plan:mode:addkey")
+async def mode_add_key(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await safe_edit(callback, texts.PLAN_MODE_NEEDS_KEY, keyboards.keys_menu(False))
+
+
+@router.callback_query(F.data.startswith("plan:mode:"))
+async def choose_mode(callback: CallbackQuery, state: FSMContext) -> None:
+    mode = callback.data.split(":", 2)[2]
+    await state.update_data(mode=mode)
+    await state.set_state(PlannerFlow.goal)
+    await safe_edit(callback, texts.PLAN_INTRO, keyboards.planner_goals())
 
 
 @router.callback_query(F.data == "plan:cancel")
@@ -122,6 +150,8 @@ async def receive_image_early(message: Message, state: FSMContext, deps: Deps, b
     data = await state.get_data()
     if "goal" not in data:
         await state.update_data(goal="three_stars")
+    if "mode" not in data:
+        await state.update_data(mode="free")
     await state.update_data(army=data.get("army", ""))
     await handle_image(message, state, deps, bot)
 
@@ -165,14 +195,20 @@ async def _run_plan(
     image_bytes: bytes | None,
 ) -> None:
     telegram_id = event.from_user.id
-    configs = await deps.ai_configs(telegram_id)
-    if not configs:
+    if not await deps.has_ai(telegram_id):
         await state.set_state(None)
         await reply(event, texts.NO_AI, keyboards.keys_menu(False))
         return
     data = await state.get_data()
     goal = data.get("goal", "three_stars")
     army = data.get("army", "")
+    mode = data.get("mode", "free")
+    configs = await _select_configs(deps, telegram_id, mode)
+    if not configs:
+        await state.set_state(None)
+        text = texts.PLAN_MODE_NEEDS_KEY if mode == "fast" else texts.NO_AI
+        await reply(event, text, keyboards.keys_menu(False))
+        return
     context = await _context(deps, telegram_id, goal, army)
 
     target = _target_message(event)

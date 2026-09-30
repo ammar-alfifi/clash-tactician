@@ -110,6 +110,21 @@ async def skip_army(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(PlannerFlow.image, F.photo | F.document)
 async def receive_image(message: Message, state: FSMContext, deps: Deps, bot: Bot) -> None:
+    await handle_image(message, state, deps, bot)
+
+
+# Accept an image at any planner step: users often send the screenshot early.
+@router.message(PlannerFlow.goal, F.photo | F.document)
+@router.message(PlannerFlow.army, F.photo | F.document)
+async def receive_image_early(message: Message, state: FSMContext, deps: Deps, bot: Bot) -> None:
+    data = await state.get_data()
+    if "goal" not in data:
+        await state.update_data(goal="three_stars")
+    await state.update_data(army=data.get("army", ""))
+    await handle_image(message, state, deps, bot)
+
+
+async def handle_image(message: Message, state: FSMContext, deps: Deps, bot: Bot) -> None:
     file_id, size = None, 0
     if message.photo:
         file_id = message.photo[-1].file_id
@@ -160,17 +175,28 @@ async def _run_plan(
 
     target = _target_message(event)
     if target:
-        await target.answer(texts.PLAN_WORKING)
+        try:
+            await target.answer(texts.PLAN_WORKING)
+        except Exception:  # noqa: BLE001
+            logger.debug("Could not send working notice", exc_info=True)
     try:
         outcome = await deps.planner.generate(configs, context, image_bytes)
     except AiError as exc:
         await reply(event, f"⚠️ {exc.reason}")
         return
+    except Exception:  # noqa: BLE001 - never leave the user without an answer
+        logger.exception("Planner crashed unexpectedly")
+        await reply(event, "⚠️ حدث خطأ غير متوقع أثناء توليد الخطة. جرّب مرة أخرى.")
+        return
 
     plan = outcome.plan
     await state.set_state(None)
     await state.update_data(plan=plan.to_json(), goal=goal, army=army, plan_id=None)
-    await _deliver_plan(event, deps, plan, image_bytes, outcome.validation)
+    try:
+        await _deliver_plan(event, deps, plan, image_bytes, outcome.validation)
+    except Exception:  # noqa: BLE001 - delivery failure must still inform the user
+        logger.exception("Plan delivery failed")
+        await reply(event, cards.plan_text(plan))
 
 
 async def _deliver_plan(

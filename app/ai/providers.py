@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 import aiohttp
+from PIL import Image
 
 from app.core.errors import AiAuthError, AiUnavailable, AiUnsupported
 
@@ -56,6 +58,31 @@ def _mime_from_bytes(data: bytes) -> str:
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "image/webp"
     return "image/jpeg"
+
+
+def compress_image(data: bytes, *, max_side: int = 1280, quality: int = 82) -> tuple[bytes, str]:
+    """Downscale/re-encode a screenshot to keep vision requests fast.
+
+    Large uploads are the main reason slow vision models time out. Returns
+    ``(bytes, mime_type)`` and falls back to the original on any failure.
+    """
+    try:
+        image = Image.open(io.BytesIO(data))
+        image.load()
+        image = image.convert("RGB")
+        width, height = image.size
+        scale = min(1.0, max_side / max(width, height))
+        if scale < 1.0:
+            new_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+            image = image.resize(new_size, Image.LANCZOS)
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=quality, optimize=True)
+        result = buffer.getvalue()
+        if len(result) < len(data) or scale < 1.0:
+            return result, "image/jpeg"
+    except Exception:  # noqa: BLE001 - compression is an optimisation
+        logger.debug("Image compression skipped", exc_info=True)
+    return data, _mime_from_bytes(data)
 
 
 class _ProviderError(Exception):
@@ -117,13 +144,13 @@ async def _chat_openai_compatible(
     timeout: int,
 ) -> str:
     if image is not None:
+        image_bytes, mime = compress_image(image)
         content: Any = [
             {"type": "text", "text": user_text},
             {
                 "type": "image_url",
                 "image_url": {
-                    "url": f"data:{_mime_from_bytes(image)};base64,"
-                    f"{base64.b64encode(image).decode()}"
+                    "url": f"data:{mime};base64,{base64.b64encode(image_bytes).decode()}"
                 },
             },
         ]
@@ -254,29 +281,75 @@ async def chat_with_fallback(
     timeout: int = 120,
 ) -> str:
     """Try each config in order, returning the first successful reply."""
+    return await chat_race(
+        configs,
+        system=system,
+        user_text=user_text,
+        image=image,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=timeout,
+    )
+
+
+async def chat_race(
+    configs: list[AiConfig],
+    *,
+    system: str,
+    user_text: str,
+    image: bytes | None = None,
+    temperature: float = 0.5,
+    max_tokens: int = 1400,
+    timeout: int = 120,
+    json_mode: bool = False,
+) -> str:
+    """Query configs in parallel and return the first successful answer.
+
+    Slow vision models are the main cause of "no reply", so racing several
+    models hides individual latencies. Auth errors abort immediately (a bad key
+    will fail everywhere); other errors are tolerated until one succeeds.
+    """
     if not configs:
         from app.core.errors import AiNotConfigured
 
         raise AiNotConfigured("لا يوجد مفتاح ذكاء اصطناعي متاح.")
-    last: Exception | None = None
-    for config in configs:
-        try:
-            return await chat(
-                config,
-                system=system,
-                user_text=user_text,
-                image=image,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                timeout=timeout,
-            )
-        except AiAuthError:
-            raise
-        except (AiUnavailable, AiUnsupported) as exc:
-            last = exc
-            logger.info("Fallback after %s/%s: %s", config.provider, config.model, exc)
-            continue
-    raise last or AiUnavailable("تعذّر الحصول على رد حاليًا.")
+
+    async def _one(config: AiConfig) -> tuple[AiConfig, str]:
+        text = await chat(
+            config,
+            system=system,
+            user_text=user_text,
+            image=image,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            json_mode=json_mode,
+            timeout=timeout,
+        )
+        return config, text
+
+    tasks = [asyncio.create_task(_one(config)) for config in configs]
+    errors: list[Exception] = []
+    try:
+        pending: set[asyncio.Task] = set(tasks)
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                try:
+                    config, text = task.result()
+                    logger.info("AI answered via %s/%s", config.provider, config.model)
+                    return text
+                except AiAuthError:
+                    for other in pending:
+                        other.cancel()
+                    raise
+                except Exception as exc:  # noqa: BLE001 - collect and continue
+                    errors.append(exc)
+        raise errors[-1] if errors else AiUnavailable("تعذّر الحصول على رد حاليًا.")
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def ping(config: AiConfig, *, timeout: int = 30) -> tuple[bool, str]:

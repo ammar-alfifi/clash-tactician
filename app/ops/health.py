@@ -65,6 +65,8 @@ async def _diag(request: web.Request) -> web.Response:
         payload["coc"] = await _coc_check(context)
     if request.query.get("ai"):
         payload["ai"] = await _ai_check(context)
+    if request.query.get("plan"):
+        payload["plan"] = await _plan_check(context)
     return web.json_response(payload)
 
 
@@ -114,6 +116,70 @@ async def _ai_check(context: HealthContext) -> dict[str, object]:
                 "tried": results,
             }
     return {"ok": False, "tried": results}
+
+
+async def _plan_check(context: HealthContext) -> dict[str, object]:
+    """End-to-end planner self-test: image -> JSON -> validation.
+
+    Reproduces the exact flow used by /plan so a silent failure is easy to spot.
+    """
+    import time
+
+    from app.ai.factory import build_shared_configs
+    from app.ai.providers import chat_race
+    from app.planner.prompts import SYSTEM_PROMPT, PlannerContext, build_user_prompt
+    from app.planner.schema import parse_plan
+    from app.planner.validator import validate_plan
+
+    configs = build_shared_configs(context.settings)
+    if not configs:
+        return {"ok": False, "reason": "no_shared_key"}
+    image = _self_test_image()
+    ctx = PlannerContext(town_hall=14, goal_label="ثلاث نجوم", army="12 Electro Dragon, 8 Balloon")
+    started = time.monotonic()
+    try:
+        raw = await chat_race(
+            configs,
+            system=SYSTEM_PROMPT,
+            user_text=build_user_prompt(ctx),
+            image=image,
+            temperature=0.25,
+            max_tokens=3000,
+            json_mode=True,
+            timeout=max(c for c in [context.settings.nvidia_timeout_seconds]),
+        )
+        plan = parse_plan(raw)
+        validation = validate_plan(plan, town_hall=ctx.town_hall, army=ctx.army)
+    except Exception as error:  # noqa: BLE001 - reported, never raised
+        return {
+            "ok": False,
+            "error": type(error).__name__,
+            "detail": str(error)[:200],
+            "seconds": round(time.monotonic() - started, 1),
+        }
+    return {
+        "ok": True,
+        "seconds": round(time.monotonic() - started, 1),
+        "phases": len(plan.phases),
+        "detections": len(plan.detections),
+        "valid": validation.ok,
+        "warnings": len(validation.warnings),
+    }
+
+
+def _self_test_image() -> bytes:
+    """A tiny synthetic base image, generated once for the self-test."""
+    from io import BytesIO
+
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", (900, 700), (44, 96, 48))
+    draw = ImageDraw.Draw(image)
+    for box in ((200, 200, 320, 320), (560, 180, 680, 300), (380, 430, 500, 550)):
+        draw.rectangle(box, fill=(150, 60, 40))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 async def serve_health(context: HealthContext, port: int) -> None:

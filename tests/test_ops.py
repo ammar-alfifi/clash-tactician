@@ -44,6 +44,14 @@ async def test_diag_requires_token(settings: Settings, database: Database):
         await client.close()
 
 
+def test_self_test_image_is_valid_png():
+    from app.ops.health import _self_test_image
+
+    data = _self_test_image()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    assert len(data) > 100
+
+
 def test_snapshot_sqlite(tmp_path: Path):
     source = tmp_path / "source.sqlite3"
     connection = sqlite3.connect(source)

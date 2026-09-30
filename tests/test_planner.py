@@ -48,6 +48,46 @@ def test_parse_plan_from_fenced_text():
     assert parse_plan(raw).phases[1].action == "أطلق التنين"
 
 
+def test_parse_plan_with_leading_prose():
+    """NVIDIA-style output: prose, then a JSON object."""
+    raw = "**ملخص الخطة**\n\n* الهدف: ثلاث نجوم\n\n" + json.dumps(VALID, ensure_ascii=False)
+    assert parse_plan(raw).phases[0].name == "فصل الجناح"
+
+
+def test_parse_plan_repairs_truncated_json():
+    """A response cut off by the token limit should be closed and parsed."""
+    raw = (
+        '{"title":"t","goal":"three_stars","confidence":0.7,"phases":['
+        '{"name":"n","action":"افعل شيئًا","markers":[{"cell":"B2"}]}'
+    )
+    assert len(parse_plan(raw).phases) == 1
+
+
+def test_parse_plan_handles_nested_braces_in_strings():
+    payload = dict(VALID)
+    payload["phases"] = [
+        {"name": "n", "action": "استخدم {قوس} داخل النص", "markers": [{"cell": "A1"}]}
+    ]
+    raw = "prose {أيضًا} " + json.dumps(payload, ensure_ascii=False)
+    assert parse_plan(raw).phases[0].action == "استخدم {قوس} داخل النص"
+
+
+def test_parse_plan_sanitizes_trailing_commas_and_newlines():
+    raw = (
+        '{\n'
+        '"title": "t",\n'
+        '"goal": "three_stars",\n'
+        '"summary": "سطر أول\nسطر ثانٍ",\n'
+        '"phases": [\n'
+        '  {"name": "n", "action": "افعل شيئًا", "markers": [{"cell": "B2"}],},\n'
+        '],\n'
+        '}'
+    )
+    plan = parse_plan(raw)
+    assert plan.phases[0].name == "n"
+    assert "سطر أول" in plan.summary
+
+
 def test_parse_plan_clamps_and_filters():
     payload = dict(VALID)
     payload["confidence"] = 150
@@ -95,8 +135,11 @@ def test_prompt_contains_context():
     prompt = build_user_prompt(context)
     assert "ثلاث نجوم" in prompt
     assert "6 تنانين" in prompt
-    assert "Dragon" in prompt
+    assert "A = الشريط 1" in prompt  # grid reference
+    assert "B3" in SYSTEM_PROMPT  # grid example
     assert "JSON" in SYSTEM_PROMPT
+    # The prompt must stay compact so free vision models keep the JSON shape.
+    assert len(prompt) < 2200
 
 
 def _plan() -> Plan:

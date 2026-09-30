@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from app.ai.providers import AiConfig, chat
+from app.ai.providers import AiConfig, chat_race
 from app.config import Settings
 from app.core.errors import AiAuthError, AiError, AiUnavailable, PlanError
 from app.planner.prompts import (
@@ -73,33 +73,56 @@ class PlannerService:
     ) -> Plan:
         if not configs:
             raise AiError("لا يوجد مفتاح ذكاء اصطناعي متاح. أضف مفتاحك في الإعدادات.")
-        last_error: Exception | None = None
-        for index, config in enumerate(configs):
-            try:
-                raw = await chat(
-                    config,
-                    system=system,
-                    user_text=user_text,
-                    image=image,
-                    temperature=0.25,
-                    max_tokens=3000,
-                    json_mode=True,
-                    timeout=self._timeout_for(config),
-                )
-                return parse_plan(raw)
-            except AiAuthError:
-                raise
-            except (AiUnavailable, PlanError) as exc:
-                last_error = exc
-                logger.info(
-                    "Planner attempt %d failed on %s/%s: %s",
-                    index + 1,
-                    config.provider,
-                    config.model,
-                    exc,
-                )
-                continue
-        raise last_error or AiUnavailable("تعذّر توليد الخطة حاليًا، جرّب مرة أخرى.")
+        timeout = max(self._timeout_for(c) for c in configs)
+        try:
+            raw = await chat_race(
+                configs,
+                system=system,
+                user_text=user_text,
+                image=image,
+                temperature=0.25,
+                max_tokens=4000,
+                json_mode=True,
+                timeout=timeout,
+            )
+            return parse_plan(raw)
+        except AiAuthError:
+            raise
+        except (AiUnavailable, PlanError) as exc:
+            logger.info("Planner race failed: %s", exc)
+            # One stricter retry asking for bare JSON only.
+            repaired = await self._retry_json_only(configs, system, user_text, image, timeout)
+            if repaired is not None:
+                return repaired
+            raise exc
+
+    async def _retry_json_only(
+        self,
+        configs: list[AiConfig],
+        system: str,
+        user_text: str,
+        image: bytes | None,
+        timeout: int,
+    ) -> Plan | None:
+        strict = (
+            "لا تكتب أي شرح أو نص قبل JSON أو بعده، وبلا markdown. أعد JSON صالحًا فقط.\n\n"
+            "أخرج كائن JSON مختصرًا (3 مراحل فقط) لتجنب القطع.\n\n" + user_text
+        )
+        try:
+            raw = await chat_race(
+                configs,
+                system=system,
+                user_text=strict,
+                image=image,
+                temperature=0.1,
+                max_tokens=3000,
+                json_mode=True,
+                timeout=timeout,
+            )
+            return parse_plan(raw)
+        except (AiError, PlanError):
+            logger.info("Strict JSON retry failed")
+            return None
 
     def _timeout_for(self, config: AiConfig) -> int:
         if config.provider == "nvidia":

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -286,11 +287,140 @@ def _loads(raw: str) -> Any:
         text = text.strip("`")
         if text.lower().startswith("json"):
             text = text[4:]
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        text = text[start : end + 1]
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise PlanError("تعذّر قراءة الخطة من رد النموذج.") from exc
+    # Models (esp. NVIDIA) often wrap the JSON in prose. Prefer a fenced block,
+    # then fall back to the first balanced object.
+    block = _extract_fenced_json(raw)
+    if block is not None:
+        return block
+    candidate = _extract_first_object(text)
+    for attempt in (
+        candidate,
+        _sanitize_json(candidate),
+        _repair_truncated_json(candidate),
+        _repair_truncated_json(_sanitize_json(candidate)),
+    ):
+        try:
+            return json.loads(attempt)
+        except json.JSONDecodeError:
+            continue
+    raise PlanError("تعذّر قراءة الخطة من رد النموذج.")
+
+
+def _sanitize_json(text: str) -> str:
+    """Fix the most common near-JSON defects produced by chat models.
+
+    Handles raw newlines/tabs inside string literals and trailing commas before
+    ``}`` or ``]`` — both are frequent when a model rewrites JSON as prose.
+    """
+    # Remove trailing commas before a closing brace/bracket.
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+    # Escape control characters that appear inside strings.
+    out: list[str] = []
+    in_string = False
+    escape = False
+    for char in text:
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            elif char == "\n":
+                out.append("\\n")
+                continue
+            elif char == "\r":
+                out.append("\\r")
+                continue
+            elif char == "\t":
+                out.append("\\t")
+                continue
+        elif char == '"':
+            in_string = True
+        out.append(char)
+    return "".join(out)
+
+
+def _extract_fenced_json(raw: str) -> Any | None:
+    markers = ("```json", "```JSON", "```")
+    for marker in markers:
+        start = raw.find(marker)
+        if start == -1:
+            continue
+        end = raw.find("```", start + len(marker))
+        if end == -1:
+            continue
+        chunk = raw[start + len(marker) : end].strip()
+        try:
+            return json.loads(chunk)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def _extract_first_object(text: str) -> str:
+    """Return the text starting at a brace that begins valid-looking JSON.
+
+    Prose may contain stray braces and a response may be truncated, so:
+    1. try each ``{`` and return the first that parses as complete JSON;
+    2. otherwise return the candidate from the **earliest** ``{`` (which is the
+       one we can best repair when the tail was cut off).
+    """
+    starts = [i for i, ch in enumerate(text) if ch == "{"]
+    if not starts:
+        raise PlanError("لا يوجد كائن JSON في رد النموذج.")
+    for start in starts:
+        candidate = _balanced_object(text, start)
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict) and ("phases" in parsed or "goal" in parsed):
+            return candidate
+    for start in starts:
+        candidate = _balanced_object(text, start)
+        if candidate.endswith("}"):
+            continue
+        return candidate
+    return _balanced_object(text, starts[0])
+
+
+def _balanced_object(text: str, start: int) -> str:
+    depth = 0
+    in_string = False
+    escape = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return text[start:]
+
+
+def _repair_truncated_json(text: str) -> str:
+    """Best-effort close of an object cut off by a token limit."""
+    result = text.rstrip()
+    # Drop a trailing partial string / property.
+    if result.endswith(","):
+        result = result[:-1]
+    # Close any open string.
+    if result.count('"') % 2 == 1:
+        result += '"'
+    open_braces = result.count("{") - result.count("}")
+    open_brackets = result.count("[") - result.count("]")
+    result += "]" * max(0, open_brackets)
+    result += "}" * max(0, open_braces)
+    return result

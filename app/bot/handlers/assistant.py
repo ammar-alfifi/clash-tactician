@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
@@ -15,6 +17,7 @@ from app.bot.states import AskFlow
 from app.core.errors import AiError
 
 router = Router(name="assistant")
+logger = logging.getLogger(__name__)
 
 SYSTEM = (
     "أنت «مدرب كلاش» الخبير في Clash of Clans. أجب بالعربية بوضوح وإيجاز، "
@@ -37,13 +40,17 @@ async def _ask(event: Message | CallbackQuery, deps: Deps, question: str) -> Non
             system=SYSTEM,
             user_text=question,
             temperature=0.6,
-            max_tokens=1200,
+            max_tokens=900,
             timeout=max(
                 deps.settings.ai_timeout_seconds, deps.settings.nvidia_timeout_seconds
             ),
         )
     except AiError as exc:
         await reply(event, f"⚠️ {exc.reason}")
+        return
+    except Exception:  # noqa: BLE001 - never leave the user without an answer
+        logger.exception("Assistant crashed")
+        await reply(event, "⚠️ حدث خطأ غير متوقع. جرّب مرة أخرى.")
         return
     text = answer.strip()[:3800]
     if isinstance(target, Message):

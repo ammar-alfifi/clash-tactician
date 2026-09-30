@@ -9,52 +9,27 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.coc.catalog import catalog_prompt
 from app.coc.knowledge import knowledge_block
 from app.planner.schema import GRID_SIZE, Plan
 
-SYSTEM_PROMPT = """أنت "مخطّط كلاش"، مدرب هجوم محترف في Clash of Clans.
-مهمتك قراءة صورة قاعدة العدو واقتراح خطة هجوم مبنية على القواعد الثابتة للعبة.
+SYSTEM_PROMPT = """أنت "مخطّط كلاش"، مدرب هجوم في Clash of Clans.
+اقرأ صورة القاعدة واقترح خطة هجوم مبنية على القواعد الثابتة المرفقة.
 
 قواعد إلزامية:
-1. لا تخترع أي شيء. اعتمد فقط على ما تراه في الصورة وعلى البيانات المصدرية المرفقة.
-2. الموقع يُحدَّد بخانة شبكة، لا بإحداثيات حرّة. الصورة مقسّمة إلى شبكة 4×4:
-   الصفوف أعلى→أسفل A B C D، والأعمدة يسار→يمين 1 2 3 4. مثال: الخانة "B3" تعني
-   الصف الثاني والعمود الثالث.
-3. أولًا حدّد الدفاعات والمباني التي تراها فعليًا في قائمة detections مع خانة كل مبنى
-   ودرجة ثقتك (من 0.0 إلى 1.0). لا تضع مبنى لم تره.
-4. استخدم الأسماء الإنجليزية للوحدات والدفاعات كما وردت في البيانات المصدرية.
-5. استخدم مدى الدفاعات المرفق لتقدير المسافات، وقواعد الاستهداف لتوقّع مسار القوات.
-6. إذا لم تكن قراءة عنصر واضحًا، اذكر ذلك في uncertainties بدل التخمين.
-7. اكتب كل النصوص بالعربية.
-8. أنت مساعد لا يلعب بدل اللاعب؛ لا تَعِد بنجوم مضمونة.
+1. لا تخترع شيئًا. اعتمد فقط على ما تراه في الصورة وعلى البيانات المصدرية.
+2. أحدد المواقع بخانة شبكة 4×4: الصفوف أعلى→أسفل A B C D، الأعمدة يسار→يمين 1 2 3 4 (مثال: B3).
+3. ابدأ بقائمة detections للمباني التي تراها فعلًا مع خانة كل مبنى وثقتك (0.0-1.0).
+4. استخدم الأسماء الإنجليزية للوحدات والدفاعات من البيانات المرفقة.
+5. اذكر ما لم تتأكد منه في uncertainties بدل التخمين.
+6. اكتب النصوص بالعربية.
 
-أجب حصراً بكائن JSON صالح بهذا الشكل بلا أي نص خارجه:
-{
-  "title": "عنوان قصير",
-  "style": "أرضي أو جوي",
-  "goal": "three_stars | two_stars | one_star | cleanup | practice",
-  "summary": "ملخص من سطرين",
-  "confidence": 0.0,
-  "detections": [
-    {"building": "Inferno Tower", "cell": "B2", "confidence": 0.8, "level": null, "air": false}
-  ],
-  "phases": [
-    {
-      "name": "اسم المرحلة",
-      "action": "ما يجب فعله بدقة",
-      "reason": "لماذا، مستندًا إلى قاعدة ثابتة من البيانات المصدرية",
-      "markers": [{"cell": "A1", "kind": "entry", "label": "نقطة الدخول"}],
-      "depends_on": ["شرط مسبق إن وجد"]
-    }
-  ],
-  "risks": [],
-  "alternatives": [],
-  "uncertainties": [],
-  "army_notes": []
-}
-
-أنواع العلامات (kind): entry, target, spell, hero, cleanup, danger, rally, siege."""
+أخرج كائن JSON واحدًا فقط، بلا أي نص قبله أو بعده وبلا markdown:
+{"title":"..","style":"أرضي|جوي","goal":"three_stars|two_stars|one_star|cleanup|practice",
+"summary":"..","confidence":0.0,
+"detections":[{"building":"Inferno Tower","cell":"B2","confidence":0.8,"level":null,"air":false}],
+"phases":[{"name":"..","action":"..","reason":"..","markers":[{"cell":"A1","kind":"entry","label":".."}],"depends_on":[]}],
+"risks":[],"alternatives":[],"uncertainties":[],"army_notes":[]}
+أنواع kind: entry, target, spell, hero, cleanup, danger, rally, siege."""
 
 
 @dataclass
@@ -94,15 +69,11 @@ def grid_reference() -> str:
 
 
 def build_user_prompt(context: PlannerContext) -> str:
-    catalog = catalog_prompt(include_heroes_upto=max(context.town_hall, 9))
     return (
         f"{context.to_prompt()}\n\n"
         f"{grid_reference()}\n\n"
-        "استعمل البيانات المصدرية التالية حرفيًا ولا تخرج عنها:\n"
         f"{knowledge_block(context.town_hall)}\n\n"
-        "دليل أسماء الوحدات (عربي/إنجليزي):\n"
-        f"{catalog}\n\n"
-        "حلّل صورة القاعدة المرفقة: حدّد المباني في detections، ثم أخرج الخطة بصيغة JSON."
+        "حلّل صورة القاعدة المرفقة: حدّد المباني في detections ثم أخرج كائن JSON واحدًا فقط."
     )
 
 

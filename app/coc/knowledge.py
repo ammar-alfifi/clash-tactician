@@ -259,10 +259,9 @@ def targeting_rules_text() -> str:
 
 
 def composition_text(th: int) -> str:
-    options = [c for c in COMPOSITIONS if c.th <= th]
-    if not options:
-        options = list(COMPOSITIONS)
+    options = [c for c in COMPOSITIONS if c.th <= th] or list(COMPOSITIONS)
     recent = [c for c in options if c.th >= th - 3] or options
+    recent.sort(key=lambda c: c.th, reverse=True)
     lines = []
     for comp in recent:
         lines.append(
@@ -284,17 +283,26 @@ def spell_text() -> str:
 
 
 def knowledge_block(th: int) -> str:
-    """Compact, source-backed briefing embedded into the planner prompt."""
+    """Compact, source-backed briefing embedded into the planner prompt.
+
+    Kept intentionally short: long prompts make free vision models drift away
+    from the required JSON shape. Only high-value, fixed facts are included.
+    """
+    # Defence ranges are the single most useful fixed fact for planning.
+    threats = sorted(DEFENSES, key=lambda d: -d.threat)[:8]
+    defense_lines = "، ".join(f"{d.en} {d.range_tiles}" for d in threats)
+    # Only the mechanics that change where troops go.
+    key_rules = (
+        "الجيش يستهدف أقرب مبنى؛ مساره يتحدد بأقرب مبنى لجهة الدخول. "
+        "كاسر الجدران يستهدف أقرب جدار. تعزيزات القلعة تخرج عند اقتراب الجيش. "
+        "آلة الحصار تُفتح داخل الجدار. لا تُرسل الأبطال قبل تمهيد المسار."
+    )
+    comp = composition_text(th).splitlines()
+    comp_short = comp[0] if comp else ""
     return (
-        "<بيانات_مصدرية_ثابتة>\n"
-        "مدى الدفاعات الحالي (بالخانات):\n"
-        f"{defense_table()}\n\n"
-        "قواعد استهداف ثابتة في اللعبة:\n"
-        f"{targeting_rules_text()}\n\n"
-        f"تشكيلات قياسية لقاعة المدينة {th}:\n{composition_text(th)}\n\n"
-        "قدرات الأبطال:\n"
-        f"{hero_ability_text()}\n\n"
-        "التعاويذ:\n"
-        f"{spell_text()}\n"
-        "</بيانات_مصدرية_ثابتة>"
+        "<بيانات_مصدرية>\n"
+        f"مدارس دفاعات مهمة (المدى بالخانات): {defense_lines}.\n"
+        f"قواعد ثابتة: {key_rules}\n"
+        f"تشكيل قياسي مقترح: {comp_short}\n"
+        "</بيانات_مصدرية>"
     )

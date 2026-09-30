@@ -164,11 +164,12 @@ def test_detected_summary_groups_by_building():
 
 def test_knowledge_block_grounded():
     block = knowledge_block(14)
-    assert "Inferno Tower" in block and "9.0 خانة" in block
-    assert "قواعد استهداف" in block
+    assert "Inferno Tower 9.0" in block
+    assert "أقرب مبنى" in block
     assert "Root Rider" in block  # TH14 composition
-    assert "بيانات_مصدرية_ثابتة" in block
-    # Ranges come from the data table, not the model.
+    assert "بيانات_مصدرية" in block
+    # Stays compact so the model keeps the JSON shape.
+    assert len(block) < 900
     inferno = next(d for d in DEFENSES if d.en == "Inferno Tower")
     assert inferno.range_tiles == 9.0 and inferno.threat == 5
 

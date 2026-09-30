@@ -106,9 +106,9 @@ def test_shared_configs_combine_providers():
     )
     configs = build_shared_configs(settings)
     providers = [c.provider for c in configs]
-    assert providers[0] == "openrouter"
-    assert "nvidia" in providers
-    # Vision models are flagged; the text planner model is explicitly not vision.
+    # NVIDIA direct is first (fastest, most reliable vision), OpenRouter last.
+    assert providers[0] == "nvidia"
+    assert "openrouter" in providers
     vision = [c for c in configs if c.supports_vision]
     text_only = [c for c in configs if not c.supports_vision]
     assert vision and text_only

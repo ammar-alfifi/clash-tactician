@@ -65,6 +65,8 @@ async def _diag(request: web.Request) -> web.Response:
         payload["coc"] = await _coc_check(context)
     if request.query.get("ai"):
         payload["ai"] = await _ai_check(context)
+    if request.query.get("vision"):
+        payload["vision"] = await _vision_check(context)
     if request.query.get("plan"):
         payload["plan"] = await _plan_check(context)
     return web.json_response(payload)
@@ -116,6 +118,45 @@ async def _ai_check(context: HealthContext) -> dict[str, object]:
                 "tried": results,
             }
     return {"ok": False, "tried": results}
+
+
+async def _vision_check(context: HealthContext) -> dict[str, object]:
+    """Prove that a vision model can read a base image (stage 1 of planning)."""
+    import time
+
+    from app.ai.factory import build_shared_configs
+    from app.ai.providers import chat_race
+    from app.planner.prompts import VISION_SYSTEM_PROMPT, build_vision_prompt
+    from app.planner.service import _is_usable_description, _vision_configs
+
+    vision = _vision_configs(build_shared_configs(context.settings))
+    if not vision:
+        return {"ok": False, "reason": "no_vision_model"}
+    started = time.monotonic()
+    try:
+        raw = await chat_race(
+            vision,
+            system=VISION_SYSTEM_PROMPT,
+            user_text=build_vision_prompt(),
+            image=_self_test_image(),
+            temperature=0.1,
+            max_tokens=900,
+            json_mode=True,
+            timeout=max(context.settings.nvidia_timeout_seconds, 60),
+            validator=_is_usable_description,
+        )
+    except Exception as error:  # noqa: BLE001 - reported, never raised
+        return {
+            "ok": False,
+            "error": type(error).__name__,
+            "detail": str(error)[:200],
+            "seconds": round(time.monotonic() - started, 1),
+        }
+    return {
+        "ok": True,
+        "seconds": round(time.monotonic() - started, 1),
+        "description": raw[:400],
+    }
 
 
 async def _plan_check(context: HealthContext) -> dict[str, object]:

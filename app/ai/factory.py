@@ -79,38 +79,27 @@ def build_user_configs(settings: Settings, key: AiKey, api_key: str) -> list[AiC
 def build_shared_configs(settings: Settings) -> list[AiConfig]:
     """Shared operator keys, ordered by what actually works for vision + JSON.
 
-    Verified against the live APIs (2026): many NVIDIA models advertised as
-    multimodal reject images (HTTP 400), so only models confirmed to accept
-    image input are included. Both providers are offered so the planner's race
-    can hide the latency or congestion of any single model.
+    Verified against the live APIs (2026):
+    - NVIDIA direct ``meta/llama-3.2-11b-vision-instruct`` is the fastest and
+      most reliable vision model (~2s, correct grid cells).
+    - OpenRouter free vision models are heavily rate-limited (HTTP 429) and are
+      kept only as a last-resort fallback.
+    - A strong NVIDIA text model handles the planning stage without an image.
     """
     configs: list[AiConfig] = []
-    if settings.openrouter_api_key:
-        models = _dedupe((settings.openrouter_model, *settings.openrouter_fallback_models))
-        configs.extend(
-            AiConfig(
-                provider="openrouter",
-                model=model,
-                api_key=settings.openrouter_api_key,
-                base_url=settings.openrouter_base_url,
-                label="OpenRouter (مشترك)",
-                header_extra=_openrouter_headers("openrouter"),
-            )
-            for model in models
-        )
+
     if settings.nvidia_api_key:
-        models = _dedupe((settings.nvidia_model, *settings.nvidia_fallback_models))
+        vision_models = _dedupe((settings.nvidia_model, *settings.nvidia_fallback_models))
         configs.extend(
             AiConfig(
                 provider="nvidia",
                 model=model,
                 api_key=settings.nvidia_api_key,
                 base_url=settings.nvidia_base_url,
-                label="NVIDIA NIM (مشترك)",
+                label="NVIDIA NIM (رؤية)",
             )
-            for model in models
+            for model in vision_models
         )
-        # Strong text-only model for the planning stage (no image needed).
         if settings.nvidia_text_model:
             configs.append(
                 AiConfig(
@@ -122,6 +111,21 @@ def build_shared_configs(settings: Settings) -> list[AiConfig]:
                     vision=False,
                 )
             )
+
+    if settings.openrouter_api_key:
+        models = _dedupe((settings.openrouter_model, *settings.openrouter_fallback_models))
+        configs.extend(
+            AiConfig(
+                provider="openrouter",
+                model=model,
+                api_key=settings.openrouter_api_key,
+                base_url=settings.openrouter_base_url,
+                label="OpenRouter (احتياطي)",
+                header_extra=_openrouter_headers("openrouter"),
+            )
+            for model in models
+        )
+
     return configs
 
 

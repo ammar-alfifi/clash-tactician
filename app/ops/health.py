@@ -63,6 +63,8 @@ async def _diag(request: web.Request) -> web.Response:
         payload["current_egress_ip"] = await egress.sample_egress_ip()
     if request.query.get("coc"):
         payload["coc"] = await _coc_check(context)
+    if request.query.get("ai"):
+        payload["ai"] = await _ai_check(context)
     return web.json_response(payload)
 
 
@@ -90,6 +92,28 @@ async def _coc_check(context: HealthContext) -> dict[str, object]:
             return {"ok": response.status == 200, "status": response.status, "detail": body[:200]}
     except (TimeoutError, aiohttp.ClientError, CocError) as error:
         return {"ok": False, "reason": type(error).__name__}
+
+
+async def _ai_check(context: HealthContext) -> dict[str, object]:
+    """Verify the shared AI key can actually answer (no secrets returned)."""
+    from app.ai.factory import build_shared_configs
+    from app.ai.providers import ping
+
+    configs = build_shared_configs(context.settings)
+    if not configs:
+        return {"ok": False, "reason": "no_shared_key"}
+    results: list[dict[str, object]] = []
+    for config in configs:
+        ok, message = await ping(config, timeout=60)
+        results.append({"provider": config.provider, "model": config.model, "ok": ok})
+        if ok:
+            return {
+                "ok": True,
+                "provider": config.provider,
+                "model": config.model,
+                "tried": results,
+            }
+    return {"ok": False, "tried": results}
 
 
 async def serve_health(context: HealthContext, port: int) -> None:

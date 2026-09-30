@@ -248,6 +248,8 @@ def plan_text(plan: Plan, *, header: str = "🎯 <b>خطة الهجوم</b>") ->
         f"🎯 الهدف: <b>{esc(plan.goal_label)}</b> "
         f"• الثقة: <b>{esc(plan.confidence_label)}</b> ({plan.confidence:.0%})",
     ]
+    if plan.style:
+        lines.append(f"🧭 الأسلوب: <b>{esc(plan.style)}</b>")
     if plan.summary:
         lines.append(f"\n📝 {esc(plan.summary)}")
     lines.append("")
@@ -320,3 +322,29 @@ def duration_label(start: str | None, end: str | None) -> str:
     if not start_dt or not end_dt:
         return "—"
     return humanize_seconds((end_dt - start_dt).total_seconds())
+
+
+def detections_card(plan: Plan) -> str:
+    """Show what the model believes it read from the image (transparency)."""
+    from app.planner.validator import detected_summary
+
+    lines = ["🔍 <b>ما قرأته من الصورة</b>", detected_summary(plan.detections)]
+    low = [d for d in plan.detections if d.confidence < 0.4]
+    if low:
+        lines.append("")
+        lines.append("⚠️ عناصر بثقة منخفضة (تحتاج تأكيدًا):")
+        lines.extend(f"• {esc(d.building)} ({d.cell})" for d in low[:6])
+    return "\n".join(lines)
+
+
+def validation_card(validation) -> str:
+    if not validation.issues and not validation.warnings:
+        return ""
+    lines = ["🧪 <b>تحقق الخادم</b>"]
+    if validation.issues:
+        lines.append("❌ مشاكل تمنع الاعتماد:")
+        lines.extend(f"• {esc(item)}" for item in validation.issues)
+    if validation.warnings:
+        lines.append("⚠️ تنبيهات:")
+        lines.extend(f"• {esc(item)}" for item in validation.warnings)
+    return "\n".join(lines)

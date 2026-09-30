@@ -162,14 +162,15 @@ async def _run_plan(
     if target:
         await target.answer(texts.PLAN_WORKING)
     try:
-        plan = await deps.planner.generate(configs, context, image_bytes)
+        outcome = await deps.planner.generate(configs, context, image_bytes)
     except AiError as exc:
         await reply(event, f"⚠️ {exc.reason}")
         return
 
+    plan = outcome.plan
     await state.set_state(None)
     await state.update_data(plan=plan.to_json(), goal=goal, army=army, plan_id=None)
-    await _deliver_plan(event, deps, plan, image_bytes)
+    await _deliver_plan(event, deps, plan, image_bytes, outcome.validation)
 
 
 async def _deliver_plan(
@@ -177,6 +178,7 @@ async def _deliver_plan(
     deps: Deps,
     plan: Plan,
     image_bytes: bytes | None,
+    validation=None,
 ) -> None:
     target = _target_message(event)
     if target is None:
@@ -190,9 +192,13 @@ async def _deliver_plan(
             )
         except Exception:  # noqa: BLE001 - rendering is best-effort
             logger.warning("Could not render annotated plan", exc_info=True)
-    await target.answer(
-        cards.plan_text(plan), reply_markup=keyboards.plan_result(None)
-    )
+    if plan.detections:
+        await target.answer(cards.detections_card(plan))
+    if validation is not None:
+        check = cards.validation_card(validation)
+        if check:
+            await target.answer(check)
+    await target.answer(cards.plan_text(plan), reply_markup=keyboards.plan_result(None))
 
 
 @router.callback_query(F.data == "plan:again")
@@ -235,14 +241,21 @@ async def refine_plan(message: Message, state: FSMContext, deps: Deps) -> None:
     )
     try:
         plan = plan_from_stored(raw_plan)
-        updated = await deps.planner.refine(configs, plan, message.text.strip()[:400], context)
+        outcome = await deps.planner.refine(configs, plan, message.text.strip()[:400], context)
     except AiError as exc:
         await message.answer(f"⚠️ {exc.reason}")
         return
+    updated = outcome.plan
     await state.set_state(None)
     await state.update_data(plan=updated.to_json())
-    await message.answer(cards.plan_text(updated, header="✏️ <b>الخطة بعد التعديل</b>"),
-                         reply_markup=keyboards.plan_result(None))
+    if outcome.validation.issues or outcome.validation.warnings:
+        check = cards.validation_card(outcome.validation)
+        if check:
+            await message.answer(check)
+    await message.answer(
+        cards.plan_text(updated, header="✏️ <b>الخطة بعد التعديل</b>"),
+        reply_markup=keyboards.plan_result(None),
+    )
 
 
 @router.callback_query(F.data == "plan:save")

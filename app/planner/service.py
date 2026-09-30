@@ -1,4 +1,4 @@
-"""Attack planner service: generate and refine plans through AI providers."""
+"""Attack planner service: generate, validate and refine plans through AI."""
 
 from __future__ import annotations
 
@@ -14,8 +14,17 @@ from app.planner.prompts import (
     build_user_prompt,
 )
 from app.planner.schema import Plan, parse_plan
+from app.planner.validator import ValidationResult, validate_plan
 
 logger = logging.getLogger(__name__)
+
+
+class PlanOutcome:
+    """A validated plan plus the server-side validation verdict."""
+
+    def __init__(self, plan: Plan, validation: ValidationResult) -> None:
+        self.plan = plan
+        self.validation = validation
 
 
 class PlannerService:
@@ -24,13 +33,14 @@ class PlannerService:
 
     async def generate(
         self, configs: list[AiConfig], context: PlannerContext, image: bytes | None
-    ) -> Plan:
-        return await self._run(
+    ) -> PlanOutcome:
+        plan = await self._run(
             configs,
             system=SYSTEM_PROMPT,
             user_text=build_user_prompt(context),
             image=image,
         )
+        return self._validate(plan, context)
 
     async def refine(
         self,
@@ -38,13 +48,20 @@ class PlannerService:
         plan: Plan,
         instruction: str,
         context: PlannerContext,
-    ) -> Plan:
-        return await self._run(
+    ) -> PlanOutcome:
+        refined = await self._run(
             configs,
             system=SYSTEM_PROMPT,
             user_text=build_refine_prompt(plan, instruction, context),
             image=None,
         )
+        return self._validate(refined, context)
+
+    def _validate(self, plan: Plan, context: PlannerContext) -> PlanOutcome:
+        result = validate_plan(plan, town_hall=context.town_hall, army=context.army)
+        if not result.ok:
+            logger.info("Plan validation issues: %s", result.summary)
+        return PlanOutcome(plan, result)
 
     async def _run(
         self,
@@ -64,8 +81,8 @@ class PlannerService:
                     system=system,
                     user_text=user_text,
                     image=image,
-                    temperature=0.35,
-                    max_tokens=2600,
+                    temperature=0.25,
+                    max_tokens=3000,
                     json_mode=True,
                     timeout=self._timeout_for(config),
                 )

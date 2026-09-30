@@ -8,7 +8,7 @@ import math
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core.errors import ImageError
-from app.planner.schema import Plan
+from app.planner.schema import GRID_SIZE, Plan
 
 PALETTE = [
     (231, 76, 60),
@@ -111,6 +111,31 @@ def render_plan(image_bytes: bytes, plan: Plan) -> bytes:
     line_width = max(5, radius // 3)
     font_big = _font(max(16, int(radius * 1.1)))
     font_leg = _font(max(14, int(radius * 0.8)))
+
+    # Light grid overlay so the player can read the cell labels the plan uses.
+    grid_color = (255, 255, 255, 60)
+    for step in range(1, GRID_SIZE):
+        x = int(width * step / GRID_SIZE)
+        y = int(height * step / GRID_SIZE)
+        draw.line([(x, 0), (x, height)], fill=grid_color, width=2)
+        draw.line([(0, y), (width, y)], fill=grid_color, width=2)
+
+    # Low-confidence detections get a subtle dashed box (transparency aid).
+    for detection in plan.detections:
+        if detection.confidence >= 0.4:
+            continue
+        from app.planner.schema import cell_to_point
+
+        point = cell_to_point(detection.cell)
+        if point is None:
+            continue
+        cx, cy = point[0] * width, point[1] * height
+        size = radius * 2
+        draw.rectangle(
+            (cx - size, cy - size, cx + size, cy + size),
+            outline=(255, 215, 0, 220),
+            width=3,
+        )
 
     points: list[list[tuple[float, float]]] = []
     for phase in plan.phases:

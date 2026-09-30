@@ -17,8 +17,34 @@ GOALS = {
     "practice": "تدريب",
 }
 
+# A 4x4 grid reduces coordinate guessing: the model names a cell, the server
+# turns it into a point. This is materially more reliable than free x/y values.
+GRID_SIZE = 4
+
 MAX_PHASES = 6
 MAX_MARKERS = 6
+MAX_DETECTIONS = 24
+
+# Threat weighting used by the server-side validator.
+DEFENSE_THREATS = {
+    "Eagle Artillery": 5,
+    "Monolith": 5,
+    "Inferno Tower": 5,
+    "Scattershot": 5,
+    "Air Defense": 4,
+    "X-Bow": 4,
+    "Spell Tower": 4,
+    "Multi-Archer Tower": 4,
+    "Wizard Tower": 3,
+    "Archer Tower": 3,
+    "Hidden Tesla": 3,
+    "Ricochet Cannon": 3,
+    "Mortar": 2,
+    "Bomb Tower": 2,
+    "Air Sweeper": 2,
+    "Cannon": 1,
+}
+
 
 
 @dataclass
@@ -27,6 +53,18 @@ class Marker:
     y: float
     kind: str = "target"
     label: str = ""
+    cell: str = ""
+
+
+@dataclass
+class Detection:
+    """A building the model believes it saw, at a coarse grid cell."""
+
+    building: str
+    cell: str
+    confidence: float = 0.5
+    th_level: int | None = None
+    air: bool = False
 
 
 @dataclass
@@ -48,6 +86,8 @@ class Plan:
     alternatives: list[str] = field(default_factory=list)
     uncertainties: list[str] = field(default_factory=list)
     army_notes: list[str] = field(default_factory=list)
+    detections: list[Detection] = field(default_factory=list)
+    style: str = ""
     title: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -71,6 +111,33 @@ class Plan:
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
+
+
+def cell_to_point(cell: str) -> tuple[float, float] | None:
+    """Convert a grid label like ``B3`` into a normalized centre point.
+
+    Rows are labelled top-to-bottom with letters (A..D for a 4x4 grid), columns
+    with digits (1..4 left-to-right).
+    """
+    if not cell:
+        return None
+    text = cell.strip().upper()
+    if len(text) < 2:
+        return None
+    letter, digits = text[0], text[1:]
+    if not letter.isalpha() or not digits.isdigit():
+        return None
+    row = ord(letter) - ord("A")
+    col = int(digits) - 1
+    if not (0 <= row < GRID_SIZE and 0 <= col < GRID_SIZE):
+        return None
+    x = (col + 0.5) / GRID_SIZE
+    y = (row + 0.5) / GRID_SIZE
+    return x, y
+
+
+def _valid_cell(cell: str) -> bool:
+    return cell_to_point(cell) is not None
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:
@@ -103,17 +170,56 @@ def _parse_markers(value: Any) -> list[Marker]:
         kind = str(item.get("kind", "target")).strip().lower()
         if kind not in MARKER_KINDS:
             kind = "target"
+        cell = str(item.get("cell", "")).strip().upper()
+        point = cell_to_point(cell)
+        if point is not None:
+            x, y = point
+        else:
+            cell = ""
+            x = _clamp(_as_float(item.get("x"), 0.5), 0.0, 1.0)
+            y = _clamp(_as_float(item.get("y"), 0.5), 0.0, 1.0)
         markers.append(
             Marker(
-                x=_clamp(_as_float(item.get("x")), 0.0, 1.0),
-                y=_clamp(_as_float(item.get("y")), 0.0, 1.0),
+                x=x,
+                y=y,
                 kind=kind,
                 label=str(item.get("label", ""))[:60],
+                cell=cell,
             )
         )
         if len(markers) >= MAX_MARKERS:
             break
     return markers
+
+
+def _parse_detections(value: Any) -> list[Detection]:
+    if not isinstance(value, list):
+        return []
+    detections: list[Detection] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        building = str(item.get("building", "")).strip()[:60]
+        cell = str(item.get("cell", "")).strip().upper()
+        if not building or not _valid_cell(cell):
+            continue
+        level = item.get("level")
+        try:
+            level_val = int(level) if level is not None else None
+        except (TypeError, ValueError):
+            level_val = None
+        detections.append(
+            Detection(
+                building=building,
+                cell=cell,
+                confidence=_clamp(_as_float(item.get("confidence"), 0.5), 0.0, 1.0),
+                th_level=level_val,
+                air=bool(item.get("air", False)),
+            )
+        )
+        if len(detections) >= MAX_DETECTIONS:
+            break
+    return detections
 
 
 def parse_plan(raw: str | dict[str, Any]) -> Plan:
@@ -164,6 +270,8 @@ def parse_plan(raw: str | dict[str, Any]) -> Plan:
         alternatives=_as_str_list(data.get("alternatives")),
         uncertainties=_as_str_list(data.get("uncertainties")),
         army_notes=_as_str_list(data.get("army_notes")),
+        detections=_parse_detections(data.get("detections")),
+        style=str(data.get("style", "")).strip()[:40],
         title=str(data.get("title", "")).strip()[:80],
     )
 

@@ -77,6 +77,10 @@ class Settings:
     openrouter_model: str = "stealth/space-bunny-alpha"
     openrouter_fallback_models: tuple[str, ...] = ()
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    nvidia_api_key: str | None = None
+    nvidia_model: str = "meta/llama-3.2-90b-vision-instruct"
+    nvidia_fallback_models: tuple[str, ...] = ()
+    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
 
     # Storage
     database_path: Path = PROJECT_ROOT / "data/bot.sqlite3"
@@ -128,6 +132,18 @@ class Settings:
             if candidate != model
         )
 
+        nvidia_model = (
+            os.getenv("NVIDIA_MODEL", "").strip() or "meta/llama-3.2-90b-vision-instruct"
+        )
+        nvidia_fallbacks = tuple(
+            candidate
+            for candidate in _model_list(
+                os.getenv("NVIDIA_FALLBACK_MODELS"),
+                "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning,meta/llama-3.2-11b-vision-instruct",
+            )
+            if candidate != nvidia_model
+        )
+
         port_raw = os.getenv("PORT", "8080").strip()
         port: int | None = None if not port_raw else _as_int(port_raw, 8080)
 
@@ -150,6 +166,15 @@ class Settings:
             .strip()
             .rstrip("/")
             or "https://openrouter.ai/api/v1",
+            nvidia_api_key=os.getenv("NVIDIA_API_KEY", "").strip() or None,
+            nvidia_model=nvidia_model,
+            nvidia_fallback_models=nvidia_fallbacks[:3],
+            nvidia_base_url=(
+                os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+                .strip()
+                .rstrip("/")
+                or "https://integrate.api.nvidia.com/v1"
+            ),
             database_path=database_path,
             default_language=os.getenv("DEFAULT_LANGUAGE", "ar").strip() or "ar",
             war_reminder_interval_minutes=max(
@@ -175,7 +200,7 @@ class Settings:
 
     @property
     def has_shared_ai(self) -> bool:
-        return bool(self.openrouter_api_key)
+        return bool(self.nvidia_api_key or self.openrouter_api_key)
 
     def is_admin(self, telegram_id: int) -> bool:
         return telegram_id in self.admin_ids

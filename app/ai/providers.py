@@ -14,17 +14,19 @@ from app.core.errors import AiAuthError, AiUnavailable, AiUnsupported
 
 logger = logging.getLogger(__name__)
 
-OPENAI_COMPATIBLE = {"openrouter", "openai", "custom"}
+OPENAI_COMPATIBLE = {"openrouter", "openai", "custom", "nvidia"}
 PROVIDER_LABELS = {
     "openrouter": "OpenRouter",
     "openai": "OpenAI",
     "gemini": "Google Gemini",
+    "nvidia": "NVIDIA NIM",
     "custom": "خدمة مخصصة",
 }
 KNOWN_BASE_URLS = {
     "openrouter": "https://openrouter.ai/api/v1",
     "openai": "https://api.openai.com/v1",
     "gemini": "https://generativelanguage.googleapis.com/v1beta",
+    "nvidia": "https://integrate.api.nvidia.com/v1",
 }
 
 
@@ -313,6 +315,7 @@ def default_model(provider: str) -> str:
         "openrouter": "google/gemma-4-31b-it:free",
         "openai": "gpt-4.1-mini",
         "gemini": "gemini-2.5-flash",
+        "nvidia": "meta/llama-3.2-90b-vision-instruct",
     }.get(provider, "")
 
 

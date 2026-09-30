@@ -95,6 +95,47 @@ def test_resolve_prefers_user_key():
     assert configs
 
 
+def test_nvidia_shared_preferred_over_openrouter():
+    settings = Settings(
+        bot_token="t",
+        nvidia_api_key="nv",
+        nvidia_model="meta/llama-3.2-90b-vision-instruct",
+        nvidia_fallback_models=("meta/llama-3.2-11b-vision-instruct",),
+        openrouter_api_key="or",
+    )
+    configs = build_shared_configs(settings)
+    assert configs[0].provider == "nvidia"
+    assert [c.model for c in configs] == [
+        "meta/llama-3.2-90b-vision-instruct",
+        "meta/llama-3.2-11b-vision-instruct",
+    ]
+    assert configs[0].supports_vision
+
+
+def test_openrouter_shared_used_as_fallback():
+    settings = Settings(bot_token="t", openrouter_api_key="or", openrouter_model="m")
+    configs = build_shared_configs(settings)
+    assert configs[0].provider == "openrouter"
+
+
+def test_nvidia_user_key_has_fallbacks():
+    settings = Settings(
+        bot_token="t",
+        nvidia_fallback_models=("fb",),
+    )
+    configs = build_user_configs(
+        settings, _key(provider="nvidia", model="main"), "user-nv"
+    )
+    assert [c.model for c in configs] == ["main", "fb"]
+    assert all(c.base_url == "https://integrate.api.nvidia.com/v1" for c in configs)
+
+
+def test_has_shared_ai_covers_nvidia():
+    assert Settings(bot_token="t", nvidia_api_key="nv").has_shared_ai
+    assert Settings(bot_token="t", openrouter_api_key="or").has_shared_ai
+    assert not Settings(bot_token="t").has_shared_ai
+
+
 async def test_chat_rejects_vision_for_text_only():
     config = AiConfig(provider="multimodal", model="text", api_key="k", base_url="https://x.test")
     with pytest.raises(AiUnsupported):

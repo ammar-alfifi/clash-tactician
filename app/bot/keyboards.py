@@ -194,7 +194,8 @@ def keys_menu(has_key: bool, provider_label: str | None = None) -> InlineKeyboar
 def providers_menu() -> InlineKeyboardMarkup:
     return _rows(
         [
-            [_btn("🌐 OpenRouter (موصى)", "key:prov:openrouter")],
+            [_btn("🟩 NVIDIA NIM (موصى)", "key:prov:nvidia")],
+            [_btn("🌐 OpenRouter", "key:prov:openrouter")],
             [_btn("🟢 OpenAI", "key:prov:openai")],
             [_btn("🔵 Gemini", "key:prov:gemini")],
             [_btn("🛠️ خدمة متوافقة (مخصص)", "key:prov:custom")],

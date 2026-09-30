@@ -67,29 +67,51 @@ def build_user_configs(settings: Settings, key: AiKey, api_key: str) -> list[AiC
             for fallback in settings.openrouter_fallback_models
             if fallback != model
         )
+    elif provider == "nvidia":
+        configs.extend(
+            AiConfig(provider="nvidia", model=fallback, api_key=api_key, base_url=base_url)
+            for fallback in settings.nvidia_fallback_models
+            if fallback != model
+        )
     return configs
 
 
 def build_shared_configs(settings: Settings) -> list[AiConfig]:
-    if not settings.openrouter_api_key:
-        return []
-    base_url = settings.openrouter_base_url
-    models = (settings.openrouter_model, *settings.openrouter_fallback_models)
+    """Shared operator key, preferring NVIDIA (vision, generous free tier)."""
+    if settings.nvidia_api_key:
+        models = _dedupe((settings.nvidia_model, *settings.nvidia_fallback_models))
+        return [
+            AiConfig(
+                provider="nvidia",
+                model=model,
+                api_key=settings.nvidia_api_key,
+                base_url=settings.nvidia_base_url,
+                label="NVIDIA NIM (مشترك)",
+            )
+            for model in models
+        ]
+    if settings.openrouter_api_key:
+        models = _dedupe((settings.openrouter_model, *settings.openrouter_fallback_models))
+        return [
+            AiConfig(
+                provider="openrouter",
+                model=model,
+                api_key=settings.openrouter_api_key,
+                base_url=settings.openrouter_base_url,
+                label="OpenRouter (مشترك)",
+                header_extra=_openrouter_headers("openrouter"),
+            )
+            for model in models
+        ]
+    return []
+
+
+def _dedupe(values: tuple[str, ...]) -> list[str]:
     seen: list[str] = []
-    for model in models:
-        if model and model not in seen:
-            seen.append(model)
-    return [
-        AiConfig(
-            provider="openrouter",
-            model=model,
-            api_key=settings.openrouter_api_key,
-            base_url=base_url,
-            label="OpenRouter (مشترك)",
-            header_extra=_openrouter_headers("openrouter"),
-        )
-        for model in seen
-    ]
+    for value in values:
+        if value and value not in seen:
+            seen.append(value)
+    return seen
 
 
 def resolve_configs(

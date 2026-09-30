@@ -23,7 +23,7 @@ from app.storage.models import AiKey
 logger = logging.getLogger(__name__)
 router = Router(name="settings")
 
-PROVIDERS = {"openrouter", "openai", "gemini", "custom"}
+PROVIDERS = {"openrouter", "openai", "gemini", "custom", "nvidia"}
 
 
 def _is_private(event: Message | CallbackQuery) -> bool:

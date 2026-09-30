@@ -302,12 +302,14 @@ async def chat_race(
     max_tokens: int = 1400,
     timeout: int = 120,
     json_mode: bool = False,
+    validator=None,
 ) -> str:
-    """Query configs in parallel and return the first successful answer.
+    """Query configs in parallel and return the first *acceptable* answer.
 
-    Slow vision models are the main cause of "no reply", so racing several
-    models hides individual latencies. Auth errors abort immediately (a bad key
-    will fail everywhere); other errors are tolerated until one succeeds.
+    Slow/unreliable vision models are the main cause of "no reply" and of
+    malformed JSON. Racing several models hides individual latency, and an
+    optional ``validator`` lets the caller reject an answer that parses but is
+    unusable (e.g. a plan without phases) so a better model can win.
     """
     if not configs:
         from app.core.errors import AiNotConfigured
@@ -325,6 +327,8 @@ async def chat_race(
             json_mode=json_mode,
             timeout=timeout,
         )
+        if validator is not None and not validator(text):
+            raise AiUnavailable(f"رد غير صالح من {config.model}")
         return config, text
 
     tasks = [asyncio.create_task(_one(config)) for config in configs]
@@ -385,7 +389,7 @@ async def ping_all(configs: list[AiConfig], *, timeout: int = 30) -> tuple[bool,
 
 def default_model(provider: str) -> str:
     return {
-        "openrouter": "google/gemma-4-31b-it:free",
+        "openrouter": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
         "openai": "gpt-4.1-mini",
         "gemini": "gemini-2.5-flash",
         "nvidia": "meta/llama-3.2-11b-vision-instruct",

@@ -26,6 +26,13 @@ MAX_PHASES = 6
 MAX_MARKERS = 6
 MAX_DETECTIONS = 24
 
+# Placeholder values some models echo from the schema instead of filling in.
+PLACEHOLDERS = {"..", "...", "؟", "?", "n/a", "na", "-", "غير محدد", "tbd"}
+
+
+def _is_placeholder(value: str) -> bool:
+    return value.strip().lower() in PLACEHOLDERS
+
 # Threat weighting used by the server-side validator.
 DEFENSE_THREATS = {
     "Eagle Artillery": 5,
@@ -202,7 +209,7 @@ def _parse_detections(value: Any) -> list[Detection]:
             continue
         building = str(item.get("building", "")).strip()[:60]
         cell = str(item.get("cell", "")).strip().upper()
-        if not building or not _valid_cell(cell):
+        if not building or _is_placeholder(building) or not _valid_cell(cell):
             continue
         level = item.get("level")
         try:
@@ -237,11 +244,14 @@ def parse_plan(raw: str | dict[str, Any]) -> Plan:
         if not isinstance(item, dict):
             continue
         action = str(item.get("action", "")).strip()
-        if not action:
+        name = str(item.get("name", "")).strip()
+        if not action or _is_placeholder(action):
             continue
+        if _is_placeholder(name):
+            name = ""
         phases.append(
             Phase(
-                name=str(item.get("name", "")).strip()[:80] or f"مرحلة {len(phases) + 1}",
+                name=name[:80] or f"مرحلة {len(phases) + 1}",
                 action=action[:800],
                 reason=str(item.get("reason", "")).strip()[:500],
                 markers=_parse_markers(item.get("markers")),

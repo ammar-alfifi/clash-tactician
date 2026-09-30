@@ -185,5 +185,32 @@ def test_parse_requires_phases():
         parse_plan({"summary": "no phases"})
 
 
+def test_placeholder_actions_are_rejected():
+    payload = dict(GRID_PLAN)
+    payload["phases"] = [
+        {"name": "..", "action": "..", "markers": [{"cell": "A1"}]},
+        {"name": "حقيقية", "action": "أطلق التنين على الدفاع", "markers": [{"cell": "B2"}]},
+    ]
+    plan = parse_plan(payload)
+    assert len(plan.phases) == 1
+    assert plan.phases[0].action.startswith("أطلق")
+
+
+def test_placeholder_only_plan_raises():
+    payload = dict(GRID_PLAN)
+    payload["phases"] = [{"name": "..", "action": "...", "markers": [{"cell": "A1"}]}]
+    with pytest.raises(PlanError):
+        parse_plan(payload)
+
+
+def test_placeholder_detections_dropped():
+    payload = dict(GRID_PLAN)
+    payload["detections"] = [
+        {"building": "..", "cell": "A1"},
+        {"building": "Cannon", "cell": "A1"},
+    ]
+    assert len(parse_plan(payload).detections) == 1
+
+
 def test_grid_size_constant():
     assert GRID_SIZE == 4

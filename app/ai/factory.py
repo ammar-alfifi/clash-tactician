@@ -77,22 +77,17 @@ def build_user_configs(settings: Settings, key: AiKey, api_key: str) -> list[AiC
 
 
 def build_shared_configs(settings: Settings) -> list[AiConfig]:
-    """Shared operator key, preferring NVIDIA (vision, generous free tier)."""
-    if settings.nvidia_api_key:
-        models = _dedupe((settings.nvidia_model, *settings.nvidia_fallback_models))
-        return [
-            AiConfig(
-                provider="nvidia",
-                model=model,
-                api_key=settings.nvidia_api_key,
-                base_url=settings.nvidia_base_url,
-                label="NVIDIA NIM (مشترك)",
-            )
-            for model in models
-        ]
+    """Shared operator keys, ordered by what actually works for vision + JSON.
+
+    Verified against the live APIs (2026): many NVIDIA models advertised as
+    multimodal reject images (HTTP 400), so only models confirmed to accept
+    image input are included. Both providers are offered so the planner's race
+    can hide the latency or congestion of any single model.
+    """
+    configs: list[AiConfig] = []
     if settings.openrouter_api_key:
         models = _dedupe((settings.openrouter_model, *settings.openrouter_fallback_models))
-        return [
+        configs.extend(
             AiConfig(
                 provider="openrouter",
                 model=model,
@@ -102,8 +97,20 @@ def build_shared_configs(settings: Settings) -> list[AiConfig]:
                 header_extra=_openrouter_headers("openrouter"),
             )
             for model in models
-        ]
-    return []
+        )
+    if settings.nvidia_api_key:
+        models = _dedupe((settings.nvidia_model, *settings.nvidia_fallback_models))
+        configs.extend(
+            AiConfig(
+                provider="nvidia",
+                model=model,
+                api_key=settings.nvidia_api_key,
+                base_url=settings.nvidia_base_url,
+                label="NVIDIA NIM (مشترك)",
+            )
+            for model in models
+        )
+    return configs
 
 
 def _dedupe(values: tuple[str, ...]) -> list[str]:

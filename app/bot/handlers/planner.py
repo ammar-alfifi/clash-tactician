@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import io
 import logging
 
@@ -174,11 +176,17 @@ async def _run_plan(
     context = await _context(deps, telegram_id, goal, army)
 
     target = _target_message(event)
+    status_message = None
     if target:
         try:
-            await target.answer(texts.PLAN_WORKING)
+            status_message = await target.answer(texts.PLAN_WORKING)
         except Exception:  # noqa: BLE001
             logger.debug("Could not send working notice", exc_info=True)
+
+    progress_task = None
+    if status_message is not None:
+        progress_task = asyncio.create_task(_progress_notifier(status_message))
+
     try:
         outcome = await deps.planner.generate(configs, context, image_bytes)
     except AiError as exc:
@@ -188,6 +196,13 @@ async def _run_plan(
         logger.exception("Planner crashed unexpectedly")
         await reply(event, "⚠️ حدث خطأ غير متوقع أثناء توليد الخطة. جرّب مرة أخرى.")
         return
+    finally:
+        if progress_task is not None:
+            progress_task.cancel()
+            await asyncio.gather(progress_task, return_exceptions=True)
+        if status_message is not None:
+            with contextlib.suppress(Exception):
+                await status_message.delete()
 
     plan = outcome.plan
     await state.set_state(None)
@@ -197,6 +212,15 @@ async def _run_plan(
     except Exception:  # noqa: BLE001 - delivery failure must still inform the user
         logger.exception("Plan delivery failed")
         await reply(event, cards.plan_text(plan))
+
+
+async def _progress_notifier(message: Message, after_seconds: float = 25) -> None:
+    """Reassure the user when generation takes longer than expected."""
+    await asyncio.sleep(after_seconds)
+    try:
+        await message.edit_text(texts.PLAN_SLOW)
+    except Exception:  # noqa: BLE001 - best effort
+        logger.debug("Could not update progress message", exc_info=True)
 
 
 async def _deliver_plan(

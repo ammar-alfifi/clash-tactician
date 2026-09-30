@@ -74,7 +74,7 @@ class Settings:
     # AI providers
     ai_key_encryption_key: str | None = None
     openrouter_api_key: str | None = None
-    openrouter_model: str = "stealth/space-bunny-alpha"
+    openrouter_model: str = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
     openrouter_fallback_models: tuple[str, ...] = ()
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     nvidia_api_key: str | None = None
@@ -123,12 +123,15 @@ class Settings:
             except ValueError as exc:
                 raise ValueError("SUPPORT_CHAT_ID must be an integer Telegram chat ID.") from exc
 
-        model = os.getenv("OPENROUTER_MODEL", "").strip() or "stealth/space-bunny-alpha"
+        model = (
+            os.getenv("OPENROUTER_MODEL", "").strip()
+            or "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+        )
         fallbacks = tuple(
             candidate
             for candidate in _model_list(
                 os.getenv("OPENROUTER_FALLBACK_MODELS"),
-                "google/gemma-4-31b-it:free,qwen/qwen3.8-27b:free",
+                "google/gemma-4-31b-it:free,thinkingmachines/inkling:free",
             )
             if candidate != model
         )
@@ -140,7 +143,7 @@ class Settings:
             candidate
             for candidate in _model_list(
                 os.getenv("NVIDIA_FALLBACK_MODELS"),
-                "meta/muse-glimmer-30b,nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+                "meta/muse-glimmer-30b,z-ai/glm-5.3-flash",
             )
             if candidate != nvidia_model
         )

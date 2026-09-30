@@ -95,21 +95,21 @@ def test_resolve_prefers_user_key():
     assert configs
 
 
-def test_nvidia_shared_preferred_over_openrouter():
+def test_shared_configs_combine_providers():
     settings = Settings(
         bot_token="t",
+        openrouter_api_key="or",
+        openrouter_model="or-model",
         nvidia_api_key="nv",
         nvidia_model="meta/llama-3.2-11b-vision-instruct",
-        nvidia_fallback_models=("meta/llama-3.2-90b-vision-instruct",),
-        openrouter_api_key="or",
+        nvidia_fallback_models=("meta/muse-glimmer-30b",),
     )
     configs = build_shared_configs(settings)
-    assert configs[0].provider == "nvidia"
-    assert [c.model for c in configs] == [
-        "meta/llama-3.2-11b-vision-instruct",
-        "meta/llama-3.2-90b-vision-instruct",
-    ]
-    assert configs[0].supports_vision
+    providers = [c.provider for c in configs]
+    # OpenRouter comes first (reliable JSON), NVIDIA is included for redundancy.
+    assert providers[0] == "openrouter"
+    assert "nvidia" in providers
+    assert all(c.supports_vision for c in configs)
 
 
 def test_openrouter_shared_used_as_fallback():

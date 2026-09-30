@@ -338,19 +338,65 @@ async def chat_race(
     timeout: int = 120,
     json_mode: bool = False,
     validator=None,
+    fast_timeout: int = 45,
 ) -> str:
-    """Query configs in parallel and return the first *acceptable* answer.
+    """Return the first acceptable answer, without waiting on slow providers.
 
-    Slow/unreliable vision models are the main cause of "no reply" and of
-    malformed JSON. Racing several models hides individual latency, and an
-    optional ``validator`` lets the caller reject an answer that parses but is
-    unusable (e.g. a plan without phases) so a better model can win.
+    Strategy:
+    1. Race the first config alone for ``fast_timeout`` seconds — this is the
+       known-good model and usually answers in a couple of seconds.
+    2. If that fails, race everything with the full ``timeout``.
     """
     if not configs:
         from app.core.errors import AiNotConfigured
 
         raise AiNotConfigured("لا يوجد مفتاح ذكاء اصطناعي متاح.")
 
+    if len(configs) > 1 and fast_timeout > 0:
+        primary = [configs[0]]
+        try:
+            return await _race_once(
+                primary,
+                system=system,
+                user_text=user_text,
+                image=image,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=min(timeout, fast_timeout),
+                json_mode=json_mode,
+                validator=validator,
+            )
+        except AiAuthError:
+            # A bad primary key should still leave the other providers a chance.
+            logger.info("Primary provider rejected the key; racing the rest")
+        except Exception as exc:  # noqa: BLE001 - fall through to full race
+            logger.info("Fast path failed (%s); racing all providers", type(exc).__name__)
+
+    return await _race_once(
+        configs,
+        system=system,
+        user_text=user_text,
+        image=image,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=timeout,
+        json_mode=json_mode,
+        validator=validator,
+    )
+
+
+async def _race_once(
+    configs: list[AiConfig],
+    *,
+    system: str,
+    user_text: str,
+    image: bytes | None,
+    temperature: float,
+    max_tokens: int,
+    timeout: int,
+    json_mode: bool,
+    validator,
+) -> str:
     async def _one(config: AiConfig) -> tuple[AiConfig, str]:
         text = await chat(
             config,
@@ -379,12 +425,10 @@ async def chat_race(
                     logger.info("AI answered via %s/%s", config.provider, config.model)
                     return text
                 except AiAuthError as exc:
-                    # One provider rejecting the key must not cancel the others.
                     auth_errors += 1
                     errors.append(exc)
                 except Exception as exc:  # noqa: BLE001 - collect and continue
                     errors.append(exc)
-        # Everything failed: surface auth only if every failure was auth.
         if errors and auth_errors == len(errors):
             raise errors[0]
         raise errors[-1] if errors else AiUnavailable("تعذّر الحصول على رد حاليًا.")

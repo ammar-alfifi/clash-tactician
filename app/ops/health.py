@@ -69,6 +69,8 @@ async def _diag(request: web.Request) -> web.Response:
         payload["vision"] = await _vision_check(context)
     if request.query.get("plan"):
         payload["plan"] = await _plan_check(context)
+    if request.query.get("trace"):
+        payload["trace"] = await _plan_trace(context)
     return web.json_response(payload)
 
 
@@ -243,3 +245,78 @@ async def serve_health(context: HealthContext, port: int) -> None:
         await asyncio.Event().wait()
     finally:
         await runner.cleanup()
+
+
+async def _plan_trace(context: HealthContext) -> dict[str, object]:
+    """Time each planning stage so a slow provider is easy to identify."""
+    import time
+
+    from app.ai.factory import build_shared_configs
+    from app.ai.providers import chat_race
+    from app.planner.prompts import (
+        SYSTEM_PROMPT,
+        VISION_SYSTEM_PROMPT,
+        PlannerContext,
+        build_plan_from_description,
+        build_vision_prompt,
+    )
+    from app.planner.service import (
+        _is_usable_description,
+        _is_usable_plan,
+        _text_configs,
+        _vision_configs,
+    )
+
+    configs = build_shared_configs(context.settings)
+    vision = _vision_configs(configs)
+    text = _text_configs(configs)
+    ctx = PlannerContext(town_hall=14, goal_label="ثلاث نجوم", army="12 Electro Dragon, 8 Balloon")
+    image = _self_test_image()
+    timeout = max(context.settings.nvidia_timeout_seconds, 60)
+
+    trace: dict[str, object] = {}
+    started = time.monotonic()
+    try:
+        description = await chat_race(
+            vision,
+            system=VISION_SYSTEM_PROMPT,
+            user_text=build_vision_prompt(),
+            image=image,
+            temperature=0.1,
+            max_tokens=900,
+            json_mode=True,
+            timeout=timeout,
+            validator=_is_usable_description,
+        )
+    except Exception as error:  # noqa: BLE001
+        trace["vision"] = {"ok": False, "error": type(error).__name__, "detail": str(error)[:150]}
+        trace["vision_seconds"] = round(time.monotonic() - started, 1)
+        return trace
+    trace["vision"] = {
+        "ok": True,
+        "seconds": round(time.monotonic() - started, 1),
+        "chars": len(description),
+    }
+
+    started = time.monotonic()
+    try:
+        await chat_race(
+            text,
+            system=SYSTEM_PROMPT,
+            user_text=build_plan_from_description(ctx, description),
+            image=None,
+            temperature=0.25,
+            max_tokens=4000,
+            json_mode=True,
+            timeout=timeout,
+            validator=_is_usable_plan,
+        )
+    except Exception as error:  # noqa: BLE001
+        trace["plan"] = {"ok": False, "error": type(error).__name__, "detail": str(error)[:150]}
+        trace["plan_seconds"] = round(time.monotonic() - started, 1)
+        return trace
+    trace["plan"] = {"ok": True, "seconds": round(time.monotonic() - started, 1)}
+    trace["two_stage_seconds"] = round(
+        float(trace["vision"]["seconds"]) + float(trace["plan"]["seconds"]), 1
+    )
+    return trace

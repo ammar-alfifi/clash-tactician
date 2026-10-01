@@ -33,7 +33,7 @@ def parse_tags(raw: str | None) -> list[str]:
 
 
 async def dump(client: Any, tags: list[str]) -> dict[str, Any]:
-    """Fetch clan + current war + war log for every tag, never raising."""
+    """Fetch clan + current war + CWL league group + war log for every tag."""
     result: dict[str, Any] = {}
     for tag in tags:
         entry: dict[str, Any] = {}
@@ -47,6 +47,10 @@ async def dump(client: Any, tags: list[str]) -> dict[str, Any]:
             entry["war"] = await client.current_war(tag)
         except Exception as error:  # noqa: BLE001
             entry["war_error"] = type(error).__name__
+        try:
+            entry["league"] = await client.league_group(tag)
+        except Exception as error:  # noqa: BLE001
+            entry["league_error"] = type(error).__name__
         try:
             entry["log"] = await client.war_log(tag, limit=10)
         except Exception as error:  # noqa: BLE001

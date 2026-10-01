@@ -115,6 +115,9 @@ async def test_diag_clan_dump(settings: Settings, database: Database):
         async def current_war(self, tag: str) -> dict:
             return {"state": "notInWar"}
 
+        async def league_group(self, tag: str) -> dict:
+            return {"state": "ended"}
+
         async def war_log(self, tag: str, limit: int = 10) -> dict:
             return {"items": []}
 
@@ -127,6 +130,7 @@ async def test_diag_clan_dump(settings: Settings, database: Database):
         dump = (await response.json())["clans"]
         assert dump["#2C0GPVLJ2"]["clan"]["name"] == "Fake"
         assert dump["#2C0GPVLJ2"]["war"]["state"] == "notInWar"
+        assert dump["#2C0GPVLJ2"]["league"]["state"] == "ended"
         assert (await client.get("/diag?clans=%232C0GPVLJ2")).status == 404
     finally:
         await client.close()

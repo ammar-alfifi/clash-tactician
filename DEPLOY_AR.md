@@ -39,7 +39,7 @@ curl -s "https://clash-tactician.onrender.com/diag?token=$TOKEN&current=1&coc=1"
 تيليجرام  ⇄  بوت Python (Render: clash-tactician.onrender.com)
                     │
                     ├── /health   نقطة صحة للمنصة والمنبّهات
-                    ├── /diag     تشخيص محمي برمز (IP + عدّادات + اختبار CoC)
+                    ├── /diag     تشخيص محمي برمز (IP + عدّادات + اختبار CoC + `&clans=` لجلب بيانات قبائل عامة)
                     ├── قاعدة SQLite في /data  → نسخ احتياطي كل 15 دقيقة → مستودع خاص
                     └── مهمة تذكيرات الحرب + تسجيل IP الخروج
 

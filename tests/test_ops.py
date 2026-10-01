@@ -87,3 +87,46 @@ async def test_restore_skips_when_db_exists(tmp_path: Path):
     path.write_bytes(b"data")
     backup = DatabaseBackup(path, remote="git@example.com:repo.git")
     assert await backup.restore() is False
+
+
+def test_parse_tags_accepts_separators():
+    from app.ops.clan_probe import parse_tags
+
+    assert parse_tags("#2C0GPVLJ2, 2RCJ2PYJG|P2008JU2") == [
+        "#2C0GPVLJ2",
+        "#2RCJ2PYJG",
+        "#P2008JU2",
+    ]
+
+
+def test_parse_tags_rejects_junk_and_caps():
+    from app.ops.clan_probe import parse_tags
+
+    assert parse_tags("../etc/passwd") == []
+    assert parse_tags(None) == []
+    assert len(parse_tags(",".join(f"#{index}" for index in range(30)))) == 12
+
+
+async def test_diag_clan_dump(settings: Settings, database: Database):
+    class _FakeCoc:
+        async def clan(self, tag: str) -> dict:
+            return {"tag": tag, "name": "Fake"}
+
+        async def current_war(self, tag: str) -> dict:
+            return {"state": "notInWar"}
+
+        async def war_log(self, tag: str, limit: int = 10) -> dict:
+            return {"items": []}
+
+    app = create_health_app(HealthContext(settings, database, _FakeCoc()))
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        response = await client.get("/diag?token=diag-secret&clans=%232C0GPVLJ2")
+        assert response.status == 200
+        dump = (await response.json())["clans"]
+        assert dump["#2C0GPVLJ2"]["clan"]["name"] == "Fake"
+        assert dump["#2C0GPVLJ2"]["war"]["state"] == "notInWar"
+        assert (await client.get("/diag?clans=%232C0GPVLJ2")).status == 404
+    finally:
+        await client.close()

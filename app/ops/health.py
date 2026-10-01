@@ -10,7 +10,7 @@ from aiohttp import web
 
 from app.config import Settings
 from app.core.errors import CocError
-from app.ops import egress
+from app.ops import clan_probe, egress
 from app.storage.database import Database
 
 logger = logging.getLogger(__name__)
@@ -71,7 +71,17 @@ async def _diag(request: web.Request) -> web.Response:
         payload["plan"] = await _plan_check(context)
     if request.query.get("trace"):
         payload["trace"] = await _plan_trace(context)
+    tags = clan_probe.parse_tags(request.query.get("clans"))
+    if tags:
+        payload["clans"] = await _clan_dump(context, tags)
     return web.json_response(payload)
+
+
+async def _clan_dump(context: HealthContext, tags: list[str]) -> dict[str, object]:
+    """Public clan/war data for owner research (read-only, token-gated above)."""
+    if context.coc is None:
+        return {"error": "coc_client_unavailable"}
+    return await clan_probe.dump(context.coc, tags)
 
 
 async def _coc_check(context: HealthContext) -> dict[str, object]:
